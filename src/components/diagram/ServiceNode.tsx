@@ -7,14 +7,7 @@ import {
 } from "@xyflow/react";
 import { Settings2, Edit2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-
-export type ServiceNodeData = {
-  label: string;
-  definition: string;
-  inputSchema: string;
-  outputSchema: string;
-  onEdit?: (id: string) => void;
-};
+import { ServiceNodeData } from "@/types/services";
 
 export function ServiceNode({ id, data }: NodeProps<Node<ServiceNodeData>>) {
   const connectionsIn = useHandleConnections({ type: "target" });
