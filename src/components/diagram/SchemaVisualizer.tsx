@@ -1,5 +1,3 @@
-import React from "react";
-
 interface SchemaVisualizerProps {
   jsonString: string;
 }
@@ -30,7 +28,8 @@ export default function SchemaVisualizer({
     );
   }
 
-  let fields: { name: string; type: string }[] = [];
+  // Updated type definition to include description
+  let fields: { name: string; type: string; description?: string }[] = [];
   let isInvalid = false;
 
   try {
@@ -49,7 +48,8 @@ export default function SchemaVisualizer({
         } else {
           typeLabel = typeLabel.substring(0, 3);
         }
-        return { name: key, type: typeLabel };
+        // Extract description from schema
+        return { name: key, type: typeLabel, description: val.description };
       });
   } catch (e) {
     isInvalid = true;
@@ -68,7 +68,9 @@ export default function SchemaVisualizer({
       {fields.map((field, i) => (
         <div
           key={field.name}
-          className={`flex items-center justify-between gap-3 px-2.5 py-1.5 transition-colors hover:bg-muted/60 ${
+          // Added native title attribute for easy viewing on hover
+          title={field.description || "No description"}
+          className={`flex items-center justify-between gap-3 px-2.5 py-1.5 transition-colors hover:bg-muted/60 cursor-help ${
             i !== fields.length - 1 ? "border-b border-border/40" : ""
           }`}
         >

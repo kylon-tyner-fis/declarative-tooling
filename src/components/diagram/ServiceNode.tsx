@@ -42,7 +42,8 @@ export function ServiceNode({ id, data }: NodeProps<Node<ServiceNodeData>>) {
           <p className="text-muted-foreground uppercase font-black text-[7px] tracking-[0.2em] mb-1.5 opacity-60">
             Definition
           </p>
-          <p className="text-foreground/90 text-[10px] leading-relaxed break-words line-clamp-2 font-medium">
+          {/* Removed 'line-clamp-2' to show full text */}
+          <p className="text-foreground/90 text-[10px] leading-relaxed break-words font-medium">
             {data.definition || "No description provided."}
           </p>
         </div>
