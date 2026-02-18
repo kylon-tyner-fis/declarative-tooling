@@ -94,7 +94,7 @@ export function NodeEditorDialog({
         method: "POST",
         body: JSON.stringify(requestBody),
       });
-      const data = await response.json();
+      const data = await response.json(); // This is finding invalid json
       setFormData((prev) => ({
         ...prev,
         label: data.label,
@@ -146,51 +146,6 @@ export function NodeEditorDialog({
               <span className="truncate max-w-[400px]">
                 Connected to source output (Schema inherited)
               </span>
-            </div>
-          )}
-
-          {/* Additional Edge Inputs */}
-          {isNewNode && !hasGenerated && !isDataNode && (
-            <div className="space-y-2">
-              <Label className="text-xs font-semibold text-purple-900 dark:text-purple-100">
-                Add Trigger/Edge Data
-              </Label>
-              <div className="flex gap-2">
-                <Input
-                  placeholder="e.g. User Solution Code"
-                  value={newInputName}
-                  onChange={(e) => setNewInputName(e.target.value)}
-                  className="h-8 text-xs bg-background border-purple-200"
-                  onKeyDown={(e) => e.key === "Enter" && addInput()}
-                />
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={addInput}
-                  className="h-8 border-purple-200 hover:bg-purple-100"
-                >
-                  <Plus className="size-3" />
-                </Button>
-              </div>
-
-              {additionalInputs.length > 0 && (
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {additionalInputs.map((input, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center gap-1 bg-white dark:bg-black border border-purple-200 px-2 py-1 rounded-md shadow-sm"
-                    >
-                      <span className="text-[10px] font-medium">{input}</span>
-                      <button
-                        onClick={() => removeInput(i)}
-                        className="text-muted-foreground hover:text-red-500"
-                      >
-                        <X className="size-3" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
           )}
 

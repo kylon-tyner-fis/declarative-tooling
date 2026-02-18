@@ -16,15 +16,24 @@ export const formatJson = (jsonString: string) => {
   }
 };
 
+/**
+ * Merges multiple JSON schemas into a single object schema.
+ */
 export const mergeSchemas = (schemas: string[]): string => {
   const mergedProps: Record<string, any> = {};
   const mergedRequired: string[] = [];
 
   schemas.forEach((s) => {
     try {
-      const parsed = JSON.parse(s);
-      const props = parsed.properties || {};
-      Object.assign(mergedProps, props);
+      const parsed = JSON.parse(s || "{}");
+      // Handle both full schemas and raw property objects
+      const props =
+        parsed.properties || (parsed.type === "object" ? {} : parsed);
+
+      if (typeof props === "object" && props !== null) {
+        Object.assign(mergedProps, props);
+      }
+
       if (Array.isArray(parsed.required)) {
         mergedRequired.push(...parsed.required);
       }
@@ -37,7 +46,10 @@ export const mergeSchemas = (schemas: string[]): string => {
     {
       type: "object",
       properties: mergedProps,
-      required: Array.from(new Set(mergedRequired)),
+      required:
+        mergedRequired.length > 0
+          ? Array.from(new Set(mergedRequired))
+          : undefined,
     },
     null,
     2,

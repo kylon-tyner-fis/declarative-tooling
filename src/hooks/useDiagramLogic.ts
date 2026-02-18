@@ -13,10 +13,13 @@ import {
   OnConnectStart,
   OnConnect,
   OnConnectEnd,
+  NodeChange,
+  EdgeChange,
 } from "@xyflow/react";
 import { ServiceNodeData } from "@/types/services";
-import { formatJson, mergeSchemas } from "@/lib/utils"; // mergeSchemas must be in utils
+import { formatJson, mergeSchemas } from "@/lib/utils";
 import { saveDiagram } from "@/app/actions";
+import { useUndoRedo } from "./useUndoRedo";
 
 export function useDiagramLogic(
   serviceId: string,
@@ -32,6 +35,126 @@ export function useDiagramLogic(
   const [nodes, setNodes, onNodesChange] =
     useNodesState<Node<ServiceNodeData>>(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initialEdges);
+
+  // --- Undo/Redo Hook ---
+  const { takeSnapshot } = useUndoRedo({
+    nodes,
+    edges,
+    setNodes: (nds) => setNodes(nds),
+    setEdges: (eds) => setEdges(eds),
+  });
+
+  // --- Wrapped Change Handlers ---
+  const onNodeDragStart = useCallback(() => {
+    takeSnapshot();
+  }, [takeSnapshot]);
+
+  const onNodesChangeWrapped = useCallback(
+    (changes: NodeChange[]) => {
+      const isRemoval = changes.some((c) => c.type === "remove");
+      if (isRemoval) takeSnapshot();
+      onNodesChange(changes);
+    },
+    [onNodesChange, takeSnapshot],
+  );
+
+  const onEdgesChangeWrapped = useCallback(
+    (changes: EdgeChange[]) => {
+      const isRemoval = changes.some((c) => c.type === "remove");
+      if (isRemoval) takeSnapshot();
+      onEdgesChange(changes);
+    },
+    [onEdgesChange, takeSnapshot],
+  );
+
+  // --- Helper: Recursive Context Builder ---
+  // Using a standard function to allow hoisting for recursion
+  function recursiveUpstreamLookup(
+    nodeId: string,
+    currentNodes: Node<ServiceNodeData>[],
+    currentEdges: Edge[],
+  ): string[] {
+    const incomingEdges = currentEdges.filter((e) => e.target === nodeId);
+    let schemas: string[] = [];
+
+    incomingEdges.forEach((edge) => {
+      const sourceNode = currentNodes.find((n) => n.id === edge.source);
+      if (!sourceNode) return;
+
+      // 1. Collect direct output
+      if (
+        sourceNode.data.outputSchema &&
+        sourceNode.data.outputSchema !== "{}"
+      ) {
+        schemas.push(sourceNode.data.outputSchema);
+      }
+
+      // 2. If Data node, recurse upstream to pass context through
+      if (sourceNode.type === "data") {
+        const upstream = recursiveUpstreamLookup(
+          sourceNode.id,
+          currentNodes,
+          currentEdges,
+        );
+        schemas = [...schemas, ...upstream];
+      }
+    });
+
+    return schemas;
+  }
+
+  // Wrap the helper for use in the editor and connection handlers
+  const getUpstreamContext = useCallback(
+    (
+      nodeId: string,
+      currentNodes: Node<ServiceNodeData>[],
+      currentEdges: Edge[],
+    ): string => {
+      const allSchemas = recursiveUpstreamLookup(
+        nodeId,
+        currentNodes,
+        currentEdges,
+      );
+      return allSchemas.length > 0 ? mergeSchemas(allSchemas) : "{}";
+    },
+    [],
+  );
+
+  // Specialized helper for ServiceNode "Injected Data" section
+  const getInjectedDataOnly = useCallback(
+    (
+      nodeId: string,
+      currentNodes: Node<ServiceNodeData>[],
+      currentEdges: Edge[],
+    ): string => {
+      const incomingEdges = currentEdges.filter((e) => e.target === nodeId);
+      let dataSchemas: string[] = [];
+
+      incomingEdges.forEach((edge) => {
+        const sourceNode = currentNodes.find((n) => n.id === edge.source);
+        if (!sourceNode) return;
+
+        if (sourceNode.type === "data") {
+          if (
+            sourceNode.data.outputSchema &&
+            sourceNode.data.outputSchema !== "{}"
+          ) {
+            dataSchemas.push(sourceNode.data.outputSchema);
+          }
+          // Pass through data node chain recursively
+          const upstreamData = recursiveUpstreamLookup(
+            sourceNode.id,
+            currentNodes,
+            currentEdges,
+          );
+          dataSchemas = [...dataSchemas, ...upstreamData];
+        }
+      });
+
+      return dataSchemas.length > 0 ? mergeSchemas(dataSchemas) : "{}";
+    },
+    [],
+  );
 
   // --- Interaction State ---
   const [connectionStartParams, setConnectionStartParams] =
@@ -50,43 +173,6 @@ export function useDiagramLogic(
     content: string;
   } | null>(null);
 
-  // --- Helper: Recursive Injected Data Builder ---
-  const getInjectedDataSchema = useCallback(
-    (
-      nodeId: string,
-      currentNodes: Node<ServiceNodeData>[],
-      currentEdges: Edge[],
-    ): string => {
-      const incomingEdges = currentEdges.filter((e) => e.target === nodeId);
-      let dataNodeSchemas: string[] = [];
-
-      incomingEdges.forEach((edge) => {
-        const sourceNode = currentNodes.find((n) => n.id === edge.source);
-        if (!sourceNode) return;
-
-        // If source is a Data Node, grab its schema
-        if (sourceNode.type === "data") {
-          if (
-            sourceNode.data.outputSchema &&
-            sourceNode.data.outputSchema !== "{}"
-          ) {
-            dataNodeSchemas.push(sourceNode.data.outputSchema);
-          }
-          // Recursively find data nodes upstream of this data node
-          const upstream = getInjectedDataSchema(
-            sourceNode.id,
-            currentNodes,
-            currentEdges,
-          );
-          if (upstream !== "{}") dataNodeSchemas.push(upstream);
-        }
-      });
-
-      return dataNodeSchemas.length > 0 ? mergeSchemas(dataNodeSchemas) : "{}";
-    },
-    [],
-  );
-
   // --- Actions ---
   const handleSave = useCallback(async () => {
     try {
@@ -99,8 +185,11 @@ export function useDiagramLogic(
   }, [nodes, edges, serviceId]);
 
   const onConnect: OnConnect = useCallback(
-    (params: Connection) => setEdges((eds) => addEdge(params, eds)),
-    [setEdges],
+    (params: Connection) => {
+      takeSnapshot();
+      setEdges((eds) => addEdge(params, eds));
+    },
+    [setEdges, takeSnapshot],
   );
 
   const onConnectStart: OnConnectStart = useCallback(
@@ -116,16 +205,21 @@ export function useDiagramLogic(
       position?: { x: number; y: number },
       contextSchema?: string,
     ) => {
+      takeSnapshot();
       const newNodeId = crypto.randomUUID();
-      const defaultPos = position || { x: 400, y: 400 };
+      const defaultPos = position || {
+        x: Math.random() * 400,
+        y: Math.random() * 400,
+      };
 
       const newNode: Node<ServiceNodeData> = {
         id: newNodeId,
-        type,
+        type: type,
         position: defaultPos,
         data: {
           label: type === "data" ? "New Data" : "New Agent",
           definition: "",
+          // Use contextSchema to pre-populate inputs
           inputSchema: contextSchema || "{}",
           outputSchema: "{}",
         },
@@ -134,15 +228,16 @@ export function useDiagramLogic(
       setNodes((nds) => nds.concat(newNode));
       setEditingNodeId(newNodeId);
       setIsNewNode(true);
-      setGenerationContext(contextSchema || "");
+      setGenerationContext(contextSchema || "{}");
       return newNodeId;
     },
-    [setNodes],
+    [setNodes, takeSnapshot],
   );
 
   const onConnectEnd: OnConnectEnd = useCallback(
     (event: MouseEvent | TouchEvent) => {
       if (!connectionStartParams || !rfInstance) return;
+
       const target = event.target as Element;
       if (target.classList.contains("react-flow__pane")) {
         const { clientX, clientY } =
@@ -151,7 +246,19 @@ export function useDiagramLogic(
           x: clientX,
           y: clientY,
         });
-        const newNodeId = addNewNode("service", position);
+
+        // 1. Find the source node from which the drag started
+        const sourceNode = rfInstance.getNode(
+          connectionStartParams.nodeId || "",
+        );
+
+        // 2. Get that specific node's output schema
+        // We use its output as the input for the newly created node
+        const inheritedSchema = sourceNode?.data?.outputSchema || "{}";
+
+        // 3. Create the new node passing the inherited schema as the inputSchema
+        const newNodeId = addNewNode("service", position, inheritedSchema);
+
         if (connectionStartParams.nodeId && connectionStartParams.handleId) {
           const newEdge: Edge = {
             id: `e-${connectionStartParams.nodeId}-${newNodeId}`,
@@ -169,6 +276,7 @@ export function useDiagramLogic(
 
   const saveNodeChanges = useCallback(
     (data: Partial<ServiceNodeData>) => {
+      takeSnapshot();
       setNodes((nds) =>
         nds.map((node) =>
           node.id === editingNodeId
@@ -178,14 +286,26 @@ export function useDiagramLogic(
       );
       setEditingNodeId(null);
     },
-    [editingNodeId, setNodes],
+    [editingNodeId, setNodes, takeSnapshot],
   );
 
-  const onEditNode = useCallback((id: string) => {
-    setEditingNodeId(id);
-    setIsNewNode(false);
-    setGenerationContext("");
-  }, []);
+  const onEditNode = useCallback(
+    (id: string) => {
+      const node = rfInstance?.getNode(id);
+      const currentNodes = (rfInstance?.getNodes() ||
+        []) as Node<ServiceNodeData>[];
+      const currentEdges = rfInstance?.getEdges() || [];
+
+      if (node) {
+        setEditingNodeId(id);
+        setIsNewNode(false);
+        // Refresh context when opening existing nodes
+        const context = getUpstreamContext(id, currentNodes, currentEdges);
+        setGenerationContext(context);
+      }
+    },
+    [rfInstance, getUpstreamContext],
+  );
 
   const onPlayNode = useCallback(
     (id: string) => {
@@ -211,14 +331,14 @@ export function useDiagramLogic(
           ...node.data,
           injectedData:
             node.type === "service"
-              ? getInjectedDataSchema(node.id, nodes, edges)
+              ? getInjectedDataOnly(node.id, nodes, edges)
               : undefined,
           onEdit: onEditNode,
           onViewSchema: onViewSchema,
           onPlay: onPlayNode,
         },
       })),
-    [nodes, edges, onEditNode, onViewSchema, onPlayNode, getInjectedDataSchema],
+    [nodes, edges, onEditNode, onViewSchema, onPlayNode, getInjectedDataOnly],
   );
 
   const nodeBeingEdited = useMemo(
@@ -229,8 +349,9 @@ export function useDiagramLogic(
   return {
     nodes: nodesWithCallbacks,
     edges,
-    onNodesChange,
-    onEdgesChange,
+    onNodesChange: onNodesChangeWrapped,
+    onEdgesChange: onEdgesChangeWrapped,
+    onNodeDragStart,
     onConnect,
     onConnectStart,
     onConnectEnd,
