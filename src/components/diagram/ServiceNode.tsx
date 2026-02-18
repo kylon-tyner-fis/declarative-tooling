@@ -7,7 +7,7 @@ import {
   Node,
   useHandleConnections,
 } from "@xyflow/react";
-import { Eye } from "lucide-react";
+import { Eye, Database } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ServiceNodeData } from "@/types/services";
 import SchemaVisualizer from "./SchemaVisualizer";
@@ -23,8 +23,11 @@ export function ServiceNode({ id, data }: NodeProps<Node<ServiceNodeData>>) {
   const baseHandleStyle =
     "size-4! border-2 border-primary transition-all hover:scale-110 cursor-grab active:cursor-grabbing shadow-sm";
 
+  // Check for presence of injected data
+  const hasInjectedData = data.injectedData && data.injectedData !== "{}";
+
   return (
-    <div className="px-5 py-4 shadow-2xl rounded-2xl bg-card border-2 border-border w-full max-w-xs group transition-all hover:border-primary/50 flex flex-col gap-5">
+    <div className="px-5 py-4 shadow-2xl rounded-2xl bg-card border-2 border-border w-[320px] group transition-all hover:border-primary/50 flex flex-col gap-5">
       <Handle
         type="target"
         position={Position.Left}
@@ -35,7 +38,6 @@ export function ServiceNode({ id, data }: NodeProps<Node<ServiceNodeData>>) {
         }}
       />
 
-      {/* Pass the onPlay callback to the header */}
       <NodeHeader
         label={data.label}
         onEdit={() => data.onEdit?.(id)}
@@ -53,6 +55,31 @@ export function ServiceNode({ id, data }: NodeProps<Node<ServiceNodeData>>) {
         </div>
 
         <div className="space-y-5">
+          {/* NEW: Injected Data Section */}
+          {hasInjectedData && (
+            <div className="space-y-2 p-2 rounded-xl bg-amber-500/5 border border-amber-500/20">
+              <div className="flex items-center justify-between px-1">
+                <p className="text-amber-600 uppercase font-black text-[7px] tracking-[0.2em] flex items-center gap-1">
+                  <Database className="size-2.5" /> Injected Data
+                </p>
+                <Button
+                  variant="ghost"
+                  className="h-5 px-1.5 text-[8px] font-bold gap-1 text-amber-600 hover:bg-amber-500/10 rounded-md transition-all"
+                  onClick={() =>
+                    data.onViewSchema?.(
+                      data.label,
+                      "Injected",
+                      data.injectedData!,
+                    )
+                  }
+                >
+                  <Eye className="size-2.5" /> View
+                </Button>
+              </div>
+              <SchemaVisualizer jsonString={data.injectedData!} />
+            </div>
+          )}
+
           {/* Input Properties */}
           <div className="space-y-2">
             <div className="flex items-center justify-between px-1">

@@ -8,13 +8,19 @@ const openai = new OpenAI({
 });
 
 const ServiceSchema = z.object({
-  label: z.string().describe("A short, catchy name for the agent/service"),
+  label: z
+    .string()
+    .describe("A short, catchy name for the agent or data payload"),
   definition: z
     .string()
-    .describe("A clear 1-2 sentence description of what this agent does"),
+    .describe(
+      "A description of what this agent does or what this data contains",
+    ),
   inputSchema: z
     .string()
-    .describe("A valid JSON schema definition representing input parameters"),
+    .describe(
+      "A valid JSON schema definition representing input parameters (Empty object for Data nodes)",
+    ),
   outputSchema: z
     .string()
     .describe("A valid JSON schema definition representing the return data"),
@@ -22,39 +28,33 @@ const ServiceSchema = z.object({
 
 export async function POST(req: Request) {
   try {
-    const { intention, contextSchema } = await req.json();
+    const { intention, contextSchema, nodeType } = await req.json();
+    const isDataNode = nodeType === "data";
 
-    const systemPrompt =
-      "You are an expert AI workflow architect. Define agentic services based on user intent. You design systems where agents pass structured data to each other.";
+    let systemPrompt = "";
+    let userPrompt = "";
 
-    let userPrompt = `Generate a service definition for: "${intention}"`;
+    if (isDataNode) {
+      // ... existing data node logic
+    } else {
+      systemPrompt = "You are an expert AI workflow architect...";
+      userPrompt = `Generate a service definition for: "${intention}"`;
 
-    // If context is provided, enforce it as the input schema
-    if (
-      contextSchema &&
-      contextSchema !== "{}" &&
-      contextSchema.trim() !== ""
-    ) {
-      userPrompt += `\n\n### CRITICAL INPUT CONTEXT ###\nThis agent is receiving data from a previous node. You MUST use the following JSON Schema as the 'inputSchema' for this new service. Do not invent new inputs unless they are auxiliary configuration. The definition should explain how the agent processes this specific input.\n\nPREVIOUS NODE OUTPUT (THIS NODE'S INPUT):\n${contextSchema}`;
+      if (contextSchema && contextSchema.trim() !== "") {
+        userPrompt += `
+### CRITICAL INPUT CONTEXT ###
+This agent is receiving data from previous nodes. 
+
+YOUR TASK:
+1. Parse the provided context below.
+2. The 'inputSchema' you return MUST be a merge of ALL properties found in the context.
+3. Do not omit any existing fields like "code" or "challengeDescription".
+4. If the user's intention requires NEW inputs (auxiliary config), add them as additional properties.
+
+PREVIOUS NODE OUTPUTS (CONTEXT):
+${contextSchema}`;
+      }
     }
-
-    const completion = await openai.chat.completions.parse({
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "system",
-          content: systemPrompt,
-        },
-        {
-          role: "user",
-          content: userPrompt,
-        },
-      ],
-      response_format: zodResponseFormat(ServiceSchema, "service"),
-    });
-
-    const result = completion.choices[0].message.parsed;
-    return NextResponse.json(result);
   } catch (error: any) {
     console.error("OpenAI Error:", error);
     return NextResponse.json(

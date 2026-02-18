@@ -12,9 +12,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Sparkles, Loader2, SkipForward } from "lucide-react";
+import {
+  Sparkles,
+  Loader2,
+  SkipForward,
+  Database,
+  Plus,
+  X,
+} from "lucide-react";
 import { ServiceNodeData } from "@/types/services";
 import { formatJson } from "@/lib/utils";
+import { SchemaBuilder } from "./SchemaBuilder"; // Import the new component
 
 interface NodeEditorDialogProps {
   isOpen: boolean;
@@ -23,6 +31,7 @@ interface NodeEditorDialogProps {
   isNewNode: boolean;
   onSave: (data: Partial<ServiceNodeData>) => void;
   contextSchema?: string;
+  nodeType?: string;
 }
 
 export function NodeEditorDialog({
@@ -32,11 +41,18 @@ export function NodeEditorDialog({
   isNewNode,
   onSave,
   contextSchema,
+  nodeType = "service",
 }: NodeEditorDialogProps) {
   const [intention, setIntention] = useState("");
+  // New state for additional edge inputs
+  const [additionalInputs, setAdditionalInputs] = useState<string[]>([]);
+  const [newInputName, setNewInputName] = useState("");
+
   const [isGenerating, setIsGenerating] = useState(false);
   const [hasGenerated, setHasGenerated] = useState(false);
   const [formData, setFormData] = useState<Partial<ServiceNodeData>>({});
+
+  const isDataNode = nodeType === "data";
 
   useEffect(() => {
     if (isOpen) {
@@ -45,27 +61,47 @@ export function NodeEditorDialog({
         inputSchema: formatJson(initialData.inputSchema || ""),
         outputSchema: formatJson(initialData.outputSchema || ""),
       });
-      setHasGenerated(!isNewNode); // If editing existing, show fields immediately
+      setHasGenerated(!isNewNode);
       setIntention("");
+      setAdditionalInputs([]);
+      setNewInputName("");
     }
   }, [isOpen, initialData, isNewNode]);
+
+  const addInput = () => {
+    if (newInputName.trim()) {
+      setAdditionalInputs([...additionalInputs, newInputName.trim()]);
+      setNewInputName("");
+    }
+  };
+
+  const removeInput = (index: number) => {
+    setAdditionalInputs(additionalInputs.filter((_, i) => i !== index));
+  };
 
   const handleAiGenerate = async () => {
     if (!intention) return;
     setIsGenerating(true);
     try {
+      const requestBody = {
+        intention,
+        contextSchema,
+        nodeType,
+        additionalInputs,
+      };
+
       const response = await fetch("/api/ai/generate-service", {
         method: "POST",
-        body: JSON.stringify({ intention, contextSchema }),
+        body: JSON.stringify(requestBody),
       });
       const data = await response.json();
-      setFormData({
-        ...formData,
+      setFormData((prev) => ({
+        ...prev,
         label: data.label,
         definition: data.definition,
-        inputSchema: formatJson(data.inputSchema),
+        inputSchema: isDataNode ? "{}" : formatJson(data.inputSchema),
         outputSchema: formatJson(data.outputSchema),
-      });
+      }));
       setIntention("");
       setHasGenerated(true);
     } catch (error) {
@@ -77,49 +113,120 @@ export function NodeEditorDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-125">
+      <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 font-bold">
-            <Sparkles className="size-4 text-purple-500 fill-purple-500" />
+            {isDataNode ? (
+              <Database className="size-5 text-amber-500" />
+            ) : (
+              <Sparkles className="size-5 text-purple-500" />
+            )}
             {isNewNode && !hasGenerated
-              ? "Define Agent Intent"
-              : "Configure Agent"}
+              ? isDataNode
+                ? "Define Data Structure"
+                : "Define Agent Intent"
+              : isDataNode
+                ? "Configure Data Node"
+                : "Configure Agent"}
           </DialogTitle>
         </DialogHeader>
 
-        <div className="bg-purple-50 dark:bg-purple-950/20 p-4 rounded-xl border border-purple-200 space-y-3 mb-2 shadow-inner">
-          <Label className="text-[10px] uppercase font-black text-purple-600 tracking-widest">
+        <div
+          className={`p-4 rounded-xl border space-y-4 mb-2 shadow-inner ${isDataNode ? "bg-amber-50 border-amber-200 dark:bg-amber-950/20" : "bg-purple-50 border-purple-200 dark:bg-purple-950/20"}`}
+        >
+          <Label
+            className={`text-[10px] uppercase font-black tracking-widest ${isDataNode ? "text-amber-600" : "text-purple-600"}`}
+          >
             AI Magic Fill
           </Label>
 
-          {contextSchema && contextSchema !== "{}" && (
-            <div className="text-[10px] text-muted-foreground bg-background/50 px-2 py-1 rounded border border-dashed border-purple-200 flex items-center gap-1.5">
+          {!isDataNode && contextSchema && contextSchema !== "{}" && (
+            <div className="text-[10px] text-muted-foreground bg-background/50 px-2 py-1.5 rounded border border-dashed border-purple-200 flex items-center gap-1.5">
               <div className="size-1.5 rounded-full bg-purple-500 animate-pulse" />
-              Using context from previous node
+              <span className="truncate max-w-[400px]">
+                Connected to source output (Schema inherited)
+              </span>
             </div>
           )}
 
-          <div className="flex gap-2">
-            <Input
-              placeholder="e.g. Read the topic and generate a coding challenge"
-              value={intention}
-              onChange={(e) => setIntention(e.target.value)}
-              className="text-xs bg-background border-purple-200"
-              autoFocus={isNewNode && !hasGenerated}
-            />
-            <Button
-              size="sm"
-              onClick={handleAiGenerate}
-              disabled={isGenerating || !intention}
-              className="bg-purple-600 hover:bg-purple-700 text-white shrink-0"
-            >
-              {isGenerating ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                "Generate"
+          {/* Additional Edge Inputs */}
+          {isNewNode && !hasGenerated && !isDataNode && (
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold text-purple-900 dark:text-purple-100">
+                Add Trigger/Edge Data
+              </Label>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="e.g. User Solution Code"
+                  value={newInputName}
+                  onChange={(e) => setNewInputName(e.target.value)}
+                  className="h-8 text-xs bg-background border-purple-200"
+                  onKeyDown={(e) => e.key === "Enter" && addInput()}
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={addInput}
+                  className="h-8 border-purple-200 hover:bg-purple-100"
+                >
+                  <Plus className="size-3" />
+                </Button>
+              </div>
+
+              {additionalInputs.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {additionalInputs.map((input, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center gap-1 bg-white dark:bg-black border border-purple-200 px-2 py-1 rounded-md shadow-sm"
+                    >
+                      <span className="text-[10px] font-medium">{input}</span>
+                      <button
+                        onClick={() => removeInput(i)}
+                        className="text-muted-foreground hover:text-red-500"
+                      >
+                        <X className="size-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
               )}
-            </Button>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <Label
+              className={`text-xs font-semibold ${isDataNode ? "text-amber-900 dark:text-amber-100" : "text-purple-900 dark:text-purple-100"}`}
+            >
+              {isDataNode ? "Data Description" : "Agent Goal"}
+            </Label>
+            <div className="flex gap-2">
+              <Input
+                placeholder={
+                  isDataNode
+                    ? "e.g. User Profile with ID, Name, and Email"
+                    : "e.g. Evaluate the code against the challenge requirements"
+                }
+                value={intention}
+                onChange={(e) => setIntention(e.target.value)}
+                className="text-xs bg-background"
+                autoFocus={isNewNode && !hasGenerated}
+              />
+              <Button
+                size="sm"
+                onClick={handleAiGenerate}
+                disabled={isGenerating || !intention}
+                className={`shrink-0 text-white ${isDataNode ? "bg-amber-600 hover:bg-amber-700" : "bg-purple-600 hover:bg-purple-700"}`}
+              >
+                {isGenerating ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  "Generate"
+                )}
+              </Button>
+            </div>
           </div>
+
           {isNewNode && !hasGenerated && (
             <div className="flex justify-center pt-1">
               <Button
@@ -135,10 +242,10 @@ export function NodeEditorDialog({
         </div>
 
         {(!isNewNode || hasGenerated) && (
-          <div className="grid gap-4 py-2 max-h-[50vh] overflow-y-auto pr-2 animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className="grid gap-4 py-2 animate-in fade-in slide-in-from-top-2 duration-300">
             <div className="grid gap-1.5">
               <Label htmlFor="name" className="text-xs font-semibold">
-                Agent Name
+                {isDataNode ? "Data Label" : "Agent Name"}
               </Label>
               <Input
                 id="name"
@@ -150,43 +257,42 @@ export function NodeEditorDialog({
             </div>
             <div className="grid gap-1.5">
               <Label htmlFor="def" className="text-xs font-semibold">
-                Definition / System Prompt
+                {isDataNode ? "Description" : "System Prompt / Definition"}
               </Label>
               <Textarea
                 id="def"
-                className="text-xs min-h-15"
+                className="text-xs min-h-[60px]"
                 value={formData.definition || ""}
                 onChange={(e) =>
                   setFormData({ ...formData, definition: e.target.value })
                 }
               />
             </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="input" className="text-xs font-semibold">
-                Input Context (JSON Schema)
-              </Label>
-              <Textarea
-                id="input"
-                className="font-mono text-[10px] min-h-25 whitespace-pre"
-                value={formData.inputSchema || ""}
-                onChange={(e) =>
-                  setFormData({ ...formData, inputSchema: e.target.value })
-                }
-                spellCheck={false}
-              />
-            </div>
+
+            {/* Input Schema - Using SchemaBuilder */}
+            {!isDataNode && (
+              <div className="grid gap-1.5">
+                <Label htmlFor="input" className="text-xs font-semibold">
+                  Input Context
+                </Label>
+                <SchemaBuilder
+                  schemaString={formData.inputSchema || "{}"}
+                  onChange={(newSchema) =>
+                    setFormData((prev) => ({ ...prev, inputSchema: newSchema }))
+                  }
+                />
+              </div>
+            )}
+
             <div className="grid gap-1.5">
               <Label htmlFor="output" className="text-xs font-semibold">
-                Output Artifacts (JSON Schema)
+                {isDataNode ? "Data Schema" : "Output Artifacts"}
               </Label>
-              <Textarea
-                id="output"
-                className="font-mono text-[10px] min-h-25 whitespace-pre"
-                value={formData.outputSchema || ""}
-                onChange={(e) =>
-                  setFormData({ ...formData, outputSchema: e.target.value })
+              <SchemaBuilder
+                schemaString={formData.outputSchema || "{}"}
+                onChange={(newSchema) =>
+                  setFormData((prev) => ({ ...prev, outputSchema: newSchema }))
                 }
-                spellCheck={false}
               />
             </div>
           </div>

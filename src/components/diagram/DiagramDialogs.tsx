@@ -43,6 +43,7 @@ export function DiagramDialogs({
           isNewNode={isNewNode}
           onSave={saveNodeChanges}
           contextSchema={generationContext}
+          nodeType={nodeBeingEdited.type}
         />
       )}
 

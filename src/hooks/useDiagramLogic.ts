@@ -15,7 +15,7 @@ import {
   OnConnectEnd,
 } from "@xyflow/react";
 import { ServiceNodeData } from "@/types/services";
-import { formatJson } from "@/lib/utils";
+import { formatJson, mergeSchemas } from "@/lib/utils"; // mergeSchemas must be in utils
 import { saveDiagram } from "@/app/actions";
 
 export function useDiagramLogic(
@@ -50,13 +50,48 @@ export function useDiagramLogic(
     content: string;
   } | null>(null);
 
-  // --- Actions ---
+  // --- Helper: Recursive Injected Data Builder ---
+  const getInjectedDataSchema = useCallback(
+    (
+      nodeId: string,
+      currentNodes: Node<ServiceNodeData>[],
+      currentEdges: Edge[],
+    ): string => {
+      const incomingEdges = currentEdges.filter((e) => e.target === nodeId);
+      let dataNodeSchemas: string[] = [];
 
+      incomingEdges.forEach((edge) => {
+        const sourceNode = currentNodes.find((n) => n.id === edge.source);
+        if (!sourceNode) return;
+
+        // If source is a Data Node, grab its schema
+        if (sourceNode.type === "data") {
+          if (
+            sourceNode.data.outputSchema &&
+            sourceNode.data.outputSchema !== "{}"
+          ) {
+            dataNodeSchemas.push(sourceNode.data.outputSchema);
+          }
+          // Recursively find data nodes upstream of this data node
+          const upstream = getInjectedDataSchema(
+            sourceNode.id,
+            currentNodes,
+            currentEdges,
+          );
+          if (upstream !== "{}") dataNodeSchemas.push(upstream);
+        }
+      });
+
+      return dataNodeSchemas.length > 0 ? mergeSchemas(dataNodeSchemas) : "{}";
+    },
+    [],
+  );
+
+  // --- Actions ---
   const handleSave = useCallback(async () => {
     try {
-      // Optimistic or simple async save
       await saveDiagram(serviceId, nodes, edges);
-      alert("Workflow saved successfully!"); // Replace with toast if you have one
+      alert("Workflow saved successfully!");
     } catch (error) {
       console.error("Save Error:", error);
       alert("Failed to save workflow.");
@@ -76,19 +111,20 @@ export function useDiagramLogic(
   );
 
   const addNewNode = useCallback(
-    (position?: { x: number; y: number }, contextSchema?: string) => {
+    (
+      type: "service" | "data",
+      position?: { x: number; y: number },
+      contextSchema?: string,
+    ) => {
       const newNodeId = crypto.randomUUID();
-      const defaultPos = position || {
-        x: Math.random() * 400,
-        y: Math.random() * 400,
-      };
+      const defaultPos = position || { x: 400, y: 400 };
 
       const newNode: Node<ServiceNodeData> = {
         id: newNodeId,
-        type: "service",
+        type,
         position: defaultPos,
         data: {
-          label: "New Agent",
+          label: type === "data" ? "New Data" : "New Agent",
           definition: "",
           inputSchema: contextSchema || "{}",
           outputSchema: "{}",
@@ -107,26 +143,15 @@ export function useDiagramLogic(
   const onConnectEnd: OnConnectEnd = useCallback(
     (event: MouseEvent | TouchEvent) => {
       if (!connectionStartParams || !rfInstance) return;
-
       const target = event.target as Element;
-      const isPane = target.classList.contains("react-flow__pane");
-
-      if (isPane) {
+      if (target.classList.contains("react-flow__pane")) {
         const { clientX, clientY } =
           "changedTouches" in event ? event.changedTouches[0] : event;
         const position = rfInstance.screenToFlowPosition({
           x: clientX,
           y: clientY,
         });
-
-        // Use rfInstance to get the source node safely
-        const sourceNode = rfInstance.getNode(
-          connectionStartParams.nodeId || "",
-        );
-        const contextSchema = sourceNode?.data.outputSchema;
-
-        const newNodeId = addNewNode(position, contextSchema);
-
+        const newNodeId = addNewNode("service", position);
         if (connectionStartParams.nodeId && connectionStartParams.handleId) {
           const newEdge: Edge = {
             id: `e-${connectionStartParams.nodeId}-${newNodeId}`,
@@ -156,24 +181,16 @@ export function useDiagramLogic(
     [editingNodeId, setNodes],
   );
 
-  // --- Node Callbacks ---
-
-  const onEditNode = useCallback(
-    (id: string) => {
-      const node = rfInstance?.getNode(id);
-      if (node) {
-        setEditingNodeId(id);
-        setIsNewNode(false);
-        setGenerationContext("");
-      }
-    },
-    [rfInstance],
-  );
+  const onEditNode = useCallback((id: string) => {
+    setEditingNodeId(id);
+    setIsNewNode(false);
+    setGenerationContext("");
+  }, []);
 
   const onPlayNode = useCallback(
     (id: string) => {
       const node = rfInstance?.getNode(id);
-      if (node) setTestingNode(node);
+      if (node) setTestingNode(node as Node<ServiceNodeData>);
     },
     [rfInstance],
   );
@@ -185,19 +202,23 @@ export function useDiagramLogic(
     [],
   );
 
-  // Inject callbacks into nodes
+  // Inject callbacks and dynamic injectedData
   const nodesWithCallbacks = useMemo(
     () =>
       nodes.map((node) => ({
         ...node,
         data: {
           ...node.data,
+          injectedData:
+            node.type === "service"
+              ? getInjectedDataSchema(node.id, nodes, edges)
+              : undefined,
           onEdit: onEditNode,
           onViewSchema: onViewSchema,
           onPlay: onPlayNode,
         },
       })),
-    [nodes, onEditNode, onViewSchema, onPlayNode],
+    [nodes, edges, onEditNode, onViewSchema, onPlayNode, getInjectedDataSchema],
   );
 
   const nodeBeingEdited = useMemo(
@@ -206,7 +227,6 @@ export function useDiagramLogic(
   );
 
   return {
-    // Canvas Props
     nodes: nodesWithCallbacks,
     edges,
     onNodesChange,
@@ -215,12 +235,8 @@ export function useDiagramLogic(
     onConnectStart,
     onConnectEnd,
     setRfInstance,
-
-    // Actions
     addNewNode,
     handleSave,
-
-    // Dialog State
     dialogs: {
       editingNodeId,
       setEditingNodeId,
@@ -228,10 +244,8 @@ export function useDiagramLogic(
       isNewNode,
       generationContext,
       saveNodeChanges,
-
       testingNode,
       setTestingNode,
-
       viewingSchema,
       setViewingSchema,
     },

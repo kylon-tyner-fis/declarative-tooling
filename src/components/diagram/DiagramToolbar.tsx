@@ -1,17 +1,19 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, Plus, Save } from "lucide-react";
+import { ChevronLeft, Plus, Save, Database } from "lucide-react";
 
 interface DiagramToolbarProps {
   onBack: () => void;
   onAddAgent: () => void;
+  onAddData: () => void;
   onSave: () => void;
 }
 
 export function DiagramToolbar({
   onBack,
   onAddAgent,
+  onAddData,
   onSave,
 }: DiagramToolbarProps) {
   return (
@@ -26,6 +28,14 @@ export function DiagramToolbar({
         </h2>
       </div>
       <div className="flex items-center gap-2">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={onAddData}
+          className="text-amber-700 border-amber-200 hover:bg-amber-50 dark:hover:bg-amber-900/20"
+        >
+          <Database className="size-4 mr-2" /> Add Data
+        </Button>
         <Button size="sm" variant="outline" onClick={onAddAgent}>
           <Plus className="size-4 mr-2" /> Add Agent
         </Button>

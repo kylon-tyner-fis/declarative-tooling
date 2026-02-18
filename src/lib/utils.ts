@@ -15,3 +15,31 @@ export const formatJson = (jsonString: string) => {
     return jsonString;
   }
 };
+
+export const mergeSchemas = (schemas: string[]): string => {
+  const mergedProps: Record<string, any> = {};
+  const mergedRequired: string[] = [];
+
+  schemas.forEach((s) => {
+    try {
+      const parsed = JSON.parse(s);
+      const props = parsed.properties || {};
+      Object.assign(mergedProps, props);
+      if (Array.isArray(parsed.required)) {
+        mergedRequired.push(...parsed.required);
+      }
+    } catch (e) {
+      console.warn("Could not parse schema for merging", e);
+    }
+  });
+
+  return JSON.stringify(
+    {
+      type: "object",
+      properties: mergedProps,
+      required: Array.from(new Set(mergedRequired)),
+    },
+    null,
+    2,
+  );
+};

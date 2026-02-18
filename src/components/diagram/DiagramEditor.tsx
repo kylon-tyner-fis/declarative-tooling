@@ -8,12 +8,13 @@ import {
   BackgroundVariant,
   Controls,
   Node,
-  Edge, // Import Edge type
+  Edge,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Loader2 } from "lucide-react";
 
 import { ServiceNode } from "@/components/diagram/ServiceNode";
+import { DataNode } from "@/components/diagram/DataNode";
 import { useDiagramLogic } from "@/hooks/useDiagramLogic";
 import { ServiceNodeData } from "@/types/services";
 import { DiagramToolbar } from "@/components/diagram/DiagramToolbar";
@@ -25,7 +26,10 @@ interface DiagramEditorProps {
   initialEdges: Edge[];
 }
 
-const nodeTypes = { service: ServiceNode };
+const nodeTypes = {
+  service: ServiceNode,
+  data: DataNode,
+};
 
 function useIsMounted() {
   return useSyncExternalStore(
@@ -51,11 +55,12 @@ export function DiagramEditor({
     onConnect,
     onConnectStart,
     onConnectEnd,
+    onNodeDragStart, // <--- Destructure this
     setRfInstance,
     addNewNode,
     handleSave,
     dialogs,
-  } = useDiagramLogic(serviceId, initialNodes, initialEdges); // Pass initial data to hook
+  } = useDiagramLogic(serviceId, initialNodes, initialEdges);
 
   if (!isMounted) {
     return (
@@ -69,7 +74,8 @@ export function DiagramEditor({
     <div className="h-screen w-screen bg-background overflow-hidden flex flex-col">
       <DiagramToolbar
         onBack={() => router.push("/services")}
-        onAddAgent={() => addNewNode()}
+        onAddAgent={() => addNewNode("service")}
+        onAddData={() => addNewNode("data")}
         onSave={handleSave}
       />
 
@@ -82,6 +88,7 @@ export function DiagramEditor({
           onConnect={onConnect}
           onConnectStart={onConnectStart}
           onConnectEnd={onConnectEnd}
+          onNodeDragStart={onNodeDragStart} // <--- Pass it to ReactFlow
           onInit={setRfInstance}
           nodeTypes={nodeTypes}
           fitView
