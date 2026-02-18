@@ -2,6 +2,20 @@ interface SchemaVisualizerProps {
   jsonString: string;
 }
 
+interface SchemaProperty {
+  type?: string;
+  description?: string;
+  items?: {
+    type?: string;
+  };
+}
+
+interface FieldDisplay {
+  name: string;
+  type: string;
+  description?: string;
+}
+
 const getTypeColor = (type: string) => {
   const t = type.toLowerCase();
   if (t.includes("str"))
@@ -28,17 +42,19 @@ export default function SchemaVisualizer({
     );
   }
 
-  // Updated type definition to include description
-  let fields: { name: string; type: string; description?: string }[] = [];
+  let fields: FieldDisplay[] = [];
   let isInvalid = false;
 
   try {
     const obj = JSON.parse(jsonString);
-    const properties = obj.properties || obj;
+    const properties = (obj.properties || obj) as Record<
+      string,
+      SchemaProperty
+    >;
 
     fields = Object.entries(properties)
       .slice(0, 4)
-      .map(([key, val]: [string, any]) => {
+      .map(([key, val]) => {
         let typeLabel = val.type || typeof val;
         if (typeLabel === "array") {
           const itemType = val.items?.type
@@ -48,10 +64,10 @@ export default function SchemaVisualizer({
         } else {
           typeLabel = typeLabel.substring(0, 3);
         }
-        // Extract description from schema
         return { name: key, type: typeLabel, description: val.description };
       });
   } catch (e) {
+    console.error("Invalid JSON schema:", e);
     isInvalid = true;
   }
 
@@ -68,7 +84,6 @@ export default function SchemaVisualizer({
       {fields.map((field, i) => (
         <div
           key={field.name}
-          // Added native title attribute for easy viewing on hover
           title={field.description || "No description"}
           className={`flex items-center justify-between gap-3 px-2.5 py-1.5 transition-colors hover:bg-muted/60 cursor-help ${
             i !== fields.length - 1 ? "border-b border-border/40" : ""

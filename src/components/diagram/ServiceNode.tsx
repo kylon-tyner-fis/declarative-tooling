@@ -35,15 +35,19 @@ export function ServiceNode({ id, data }: NodeProps<Node<ServiceNodeData>>) {
         }}
       />
 
-      <NodeHeader label={data.label} onEdit={() => data.onEdit?.(id)} />
+      {/* Pass the onPlay callback to the header */}
+      <NodeHeader
+        label={data.label}
+        onEdit={() => data.onEdit?.(id)}
+        onPlay={() => data.onPlay?.(id)}
+      />
 
       <div className="space-y-6">
         <div className="relative pl-3 border-l-2 border-primary/30">
           <p className="text-muted-foreground uppercase font-black text-[7px] tracking-[0.2em] mb-1.5 opacity-60">
             Definition
           </p>
-          {/* Removed 'line-clamp-2' to show full text */}
-          <p className="text-foreground/90 text-[10px] leading-relaxed break-words font-medium">
+          <p className="text-foreground/90 text-[10px] leading-relaxed wrap-break-word font-medium">
             {data.definition || "No description provided."}
           </p>
         </div>

@@ -1,14 +1,15 @@
 "use client";
 
-import { Settings2, Edit2 } from "lucide-react";
+import { Settings2, Edit2, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface NodeHeaderProps {
   label: string;
   onEdit?: () => void;
+  onPlay?: () => void;
 }
 
-export function NodeHeader({ label, onEdit }: NodeHeaderProps) {
+export function NodeHeader({ label, onEdit, onPlay }: NodeHeaderProps) {
   return (
     <div className="flex items-center justify-between gap-3 border-b border-dashed pb-3">
       <div className="flex items-center gap-2.5 overflow-hidden">
@@ -24,14 +25,29 @@ export function NodeHeader({ label, onEdit }: NodeHeaderProps) {
           </span>
         </div>
       </div>
-      <Button
-        variant="ghost"
-        size="icon-xs"
-        onClick={onEdit}
-        className="opacity-0 group-hover:opacity-100 transition-opacity h-8 w-8 shrink-0 rounded-full bg-muted/50 hover:bg-muted"
-      >
-        <Edit2 className="size-3" />
-      </Button>
+      <div className="flex items-center gap-1">
+        {/* NEW: Play Button for Testing */}
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          onClick={(e) => {
+            e.stopPropagation();
+            onPlay?.();
+          }}
+          className="h-8 w-8 shrink-0 rounded-full text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700"
+          title="Test this agent"
+        >
+          <Play className="size-3 fill-emerald-600" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          onClick={onEdit}
+          className="opacity-0 group-hover:opacity-100 transition-opacity h-8 w-8 shrink-0 rounded-full bg-muted/50 hover:bg-muted"
+        >
+          <Edit2 className="size-3" />
+        </Button>
+      </div>
     </div>
   );
 }

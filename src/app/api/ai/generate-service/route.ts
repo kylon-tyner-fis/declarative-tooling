@@ -7,12 +7,11 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Define the exact shape we want the AI to return
 const ServiceSchema = z.object({
-  label: z.string().describe("A short, catchy name for the service"),
+  label: z.string().describe("A short, catchy name for the agent/service"),
   definition: z
     .string()
-    .describe("A clear 1-2 sentence description of what it does"),
+    .describe("A clear 1-2 sentence description of what this agent does"),
   inputSchema: z
     .string()
     .describe("A valid JSON schema definition representing input parameters"),
@@ -23,19 +22,32 @@ const ServiceSchema = z.object({
 
 export async function POST(req: Request) {
   try {
-    const { intention } = await req.json();
+    const { intention, contextSchema } = await req.json();
+
+    const systemPrompt =
+      "You are an expert AI workflow architect. Define agentic services based on user intent. You design systems where agents pass structured data to each other.";
+
+    let userPrompt = `Generate a service definition for: "${intention}"`;
+
+    // If context is provided, enforce it as the input schema
+    if (
+      contextSchema &&
+      contextSchema !== "{}" &&
+      contextSchema.trim() !== ""
+    ) {
+      userPrompt += `\n\n### CRITICAL INPUT CONTEXT ###\nThis agent is receiving data from a previous node. You MUST use the following JSON Schema as the 'inputSchema' for this new service. Do not invent new inputs unless they are auxiliary configuration. The definition should explain how the agent processes this specific input.\n\nPREVIOUS NODE OUTPUT (THIS NODE'S INPUT):\n${contextSchema}`;
+    }
 
     const completion = await openai.chat.completions.parse({
-      model: "gpt-4o-mini", // Cost-effective and supports structured outputs
+      model: "gpt-4o-mini",
       messages: [
         {
           role: "system",
-          content:
-            "You are an expert software architect. Define technical services based on user intent.",
+          content: systemPrompt,
         },
         {
           role: "user",
-          content: `Generate a service definition for: "${intention}"`,
+          content: userPrompt,
         },
       ],
       response_format: zodResponseFormat(ServiceSchema, "service"),
