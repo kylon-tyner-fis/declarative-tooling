@@ -1,101 +1,131 @@
-import { cn } from "@/lib/utils";
+"use client";
+
+import React from "react";
+import { EyeOff, AlertCircle, Sparkles, Code2, Type, Eye } from "lucide-react";
 
 interface SchemaVisualizerProps {
   jsonString: string;
+  plugins?: any[]; // Added to receive the mapping from the node
 }
 
 const getTypeColor = (type: string) => {
-  const t = type.toLowerCase();
-  if (t.includes("str"))
-    return "bg-blue-500/10 text-blue-600 border-blue-500/20";
-  if (t.includes("num") || t.includes("int"))
-    return "bg-amber-500/10 text-amber-600 border-amber-500/20";
-  if (t.includes("boo"))
-    return "bg-emerald-500/10 text-emerald-600 border-emerald-500/20";
-  if (t.includes("arr"))
-    return "bg-indigo-500/10 text-indigo-600 border-indigo-500/20";
-  if (t.includes("obj"))
-    return "bg-purple-500/10 text-purple-600 border-purple-500/20";
-  return "bg-primary/10 text-primary border-primary/20";
+  const t = type?.toLowerCase() || "";
+  if (t.includes("string"))
+    return "bg-blue-500/10 text-blue-600 border-blue-200";
+  if (t.includes("number"))
+    return "bg-emerald-500/10 text-emerald-600 border-emerald-200";
+  if (t.includes("boolean"))
+    return "bg-purple-500/10 text-purple-600 border-purple-200";
+  if (t.includes("array"))
+    return "bg-orange-500/10 text-orange-600 border-orange-200";
+  return "bg-slate-500/10 text-slate-600 border-slate-200";
+};
+
+// Helper to get the icon associated with the widget type
+const getPluginIcon = (pluginId: string) => {
+  switch (pluginId) {
+    case "code-editor":
+      return <Code2 className="size-2.5" />;
+    case "standard-input":
+      return <Type className="size-2.5" />;
+    case "markdown-viewer":
+      return <Eye className="size-2.5" />;
+    default:
+      return <Sparkles className="size-2.5" />;
+  }
 };
 
 export default function SchemaVisualizer({
   jsonString,
+  plugins = [],
 }: SchemaVisualizerProps) {
-  // 1. Handle empty input immediately
-  if (!jsonString || jsonString === "{}") {
+  let fields: any[] = [];
+  let parseError = false;
+
+  try {
+    const obj = JSON.parse(jsonString || "{}");
+    const properties = obj.properties || (typeof obj === "object" ? obj : {});
+
+    fields = Object.entries(properties).map(([key, val]: [string, any]) => {
+      // Find which plugin is assigned to this specific property
+      const correlatedPlugin = plugins.find((p) => p.targetProperty === key);
+
+      let typeLabel = val?.type || typeof val;
+      if (val?.type === "array" && val.items?.type) {
+        typeLabel = `array[${val.items.type}]`;
+      }
+      return {
+        name: key,
+        type: typeLabel,
+        displayOnly: val?.displayOnly === true,
+        pluginId: correlatedPlugin?.pluginId,
+      };
+    });
+  } catch (e) {
+    parseError = true;
+  }
+
+  if (parseError) {
     return (
-      <div className="text-[9px] text-muted-foreground/60 italic px-1 py-2 bg-muted/20 rounded border border-dashed text-center">
+      <div className="flex items-center gap-2 p-2 rounded bg-destructive/5 border border-destructive/20 text-[10px] text-destructive italic">
+        <AlertCircle className="size-3" /> Invalid Schema
+      </div>
+    );
+  }
+
+  if (fields.length === 0) {
+    return (
+      <div className="p-3 text-center rounded-lg border border-dashed border-muted-foreground/20 text-[9px] text-muted-foreground italic">
         No properties defined
       </div>
     );
   }
 
-  let properties: Record<string, any> = {};
-  let isInvalid = false;
-
-  // 2. Perform data parsing and logic INSIDE the try/catch, but NOT JSX construction
-  try {
-    const obj = JSON.parse(jsonString);
-    properties = (obj.properties || obj) as Record<string, any>;
-  } catch (e) {
-    console.error("Invalid JSON schema:", e);
-    isInvalid = true;
-  }
-
-  // 3. Handle error state outside the try/catch
-  if (isInvalid) {
-    return (
-      <div className="text-[8px] text-destructive bg-destructive/10 px-2 py-1 rounded border border-destructive/20 font-medium">
-        ⚠️ Invalid Schema
-      </div>
-    );
-  }
-
-  // 4. Return JSX safely using the processed data
   return (
     <div className="flex flex-col overflow-hidden rounded-lg border border-border/50 bg-muted/30 mt-2 shadow-inner">
-      {Object.entries(properties).map(([key, val], i) => {
-        const isInjected = val._ui_source === "injected";
-        let typeLabel = val.type || typeof val;
+      {fields.map((field, i) => (
+        <div
+          key={field.name}
+          className={`flex items-center justify-between gap-3 px-2.5 py-1.5 transition-colors hover:bg-muted/60 ${
+            i !== fields.length - 1 ? "border-b border-border/40" : ""
+          }`}
+        >
+          <div className="flex items-center gap-2 truncate">
+            <span className="text-[9px] font-mono font-bold text-foreground/80 truncate">
+              {field.name}
+            </span>
 
-        if (typeLabel === "array") {
-          const itemType = val.items?.type
-            ? val.items.type.substring(0, 3)
-            : "any";
-          typeLabel = `arr[${itemType}]`;
-        } else {
-          typeLabel = typeLabel.substring(0, 3);
-        }
-
-        return (
-          <div
-            key={key}
-            title={val.description || "No description"}
-            className={cn(
-              "flex items-center justify-between gap-3 px-2.5 py-1.5 transition-colors border-b last:border-0 cursor-help",
-              isInjected ? "bg-amber-500/10" : "hover:bg-muted/60",
+            {/* Plugin Correlation Badge */}
+            {field.pluginId && (
+              <div
+                title={`Handled by ${field.pluginId}`}
+                className="flex items-center gap-1 px-1 py-0.5 rounded bg-primary/10 border border-primary/20 text-[6px] font-black uppercase text-primary tracking-tighter"
+              >
+                {getPluginIcon(field.pluginId)}
+                <span className="hidden sm:inline">
+                  {field.pluginId
+                    .replace("-input", "")
+                    .replace("-viewer", "")
+                    .replace("code-", "")}
+                </span>
+              </div>
             )}
-          >
-            <span
-              className={cn(
-                "text-[9px] font-mono font-bold truncate max-w-27.5",
-                isInjected ? "text-amber-700" : "text-foreground/80",
-              )}
-            >
-              {key}
-            </span>
-            <span
-              className={cn(
-                "text-[7px] font-black uppercase px-1.5 py-0.5 rounded-lg border leading-none shrink-0 tabular-nums tracking-tighter shadow-sm",
-                getTypeColor(typeLabel),
-              )}
-            >
-              {typeLabel}
-            </span>
+
+            {field.displayOnly && (
+              <span title="Display Only (Not passed downstream)">
+                <EyeOff className="size-2.5 text-blue-500" />
+              </span>
+            )}
           </div>
-        );
-      })}
+          <span
+            className={`text-[7px] font-black uppercase px-1.5 py-0.5 rounded-lg border leading-none shrink-0 tabular-nums tracking-tighter shadow-sm ${getTypeColor(
+              field.type,
+            )}`}
+          >
+            {field.type}
+          </span>
+        </div>
+      ))}
     </div>
   );
 }

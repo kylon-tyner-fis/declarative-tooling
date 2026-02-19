@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
@@ -8,6 +8,23 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,25 +32,33 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Sparkles,
   Loader2,
-  SkipForward,
   Database,
-  Plus,
-  X,
-  LayoutPanelTop,
+  AlertTriangle,
+  Settings2,
+  Code2,
+  Type,
+  Eye,
 } from "lucide-react";
 import { ServiceNodeData } from "@/types/services";
 import { formatJson } from "@/lib/utils";
 import { SchemaBuilder } from "./SchemaBuilder";
 
-interface NodeEditorDialogProps {
-  isOpen: boolean;
-  onClose: () => void;
-  initialData: Partial<ServiceNodeData>;
-  isNewNode: boolean;
-  onSave: (data: Partial<ServiceNodeData>) => void;
-  contextSchema?: string;
-  nodeType?: string;
-}
+// --- HELPERS ---
+
+const getSchemaKeys = (schemaStr: string) => {
+  try {
+    const schema = JSON.parse(schemaStr || "{}");
+    return Object.keys(schema.properties || {});
+  } catch {
+    return [];
+  }
+};
+
+const WIDGET_OPTIONS = [
+  { id: "standard-input", label: "Standard Input", icon: Type },
+  { id: "code-editor", label: "Code Editor", icon: Code2 },
+  { id: "markdown-viewer", label: "Markdown Viewer", icon: Eye },
+];
 
 export function NodeEditorDialog({
   isOpen,
@@ -43,59 +68,80 @@ export function NodeEditorDialog({
   onSave,
   contextSchema,
   nodeType = "service",
-}: NodeEditorDialogProps) {
+}: any) {
   const [intention, setIntention] = useState("");
-  const [additionalInputs, setAdditionalInputs] = useState<string[]>([]);
-  const [newInputName, setNewInputName] = useState("");
-
   const [isGenerating, setIsGenerating] = useState(false);
   const [hasGenerated, setHasGenerated] = useState(false);
   const [formData, setFormData] = useState<Partial<ServiceNodeData>>({});
+  const [showNoInputWarning, setShowNoInputWarning] = useState(false);
 
   const isDataNode = nodeType === "data";
+  const hasNoInputs =
+    !contextSchema || contextSchema === "{}" || contextSchema.trim() === "";
+
+  // Memoize all available property keys from both schemas to drive the Widget UI
+  const allPropertyKeys = useMemo(() => {
+    const inputs = getSchemaKeys(formData.inputSchema || "{}");
+    const outputs = getSchemaKeys(formData.outputSchema || "{}");
+    // Use a Set to ensure uniqueness across both
+    return Array.from(new Set([...inputs, ...outputs]));
+  }, [formData.inputSchema, formData.outputSchema]);
 
   useEffect(() => {
     if (isOpen) {
       setFormData({
         ...initialData,
-        inputSchema: formatJson(initialData.inputSchema || ""),
-        outputSchema: formatJson(initialData.outputSchema || ""),
-        displaySchema: formatJson(initialData.displaySchema || ""), // NEW: Load display schema
+        inputSchema: formatJson(initialData.inputSchema || "{}"),
+        outputSchema: formatJson(initialData.outputSchema || "{}"),
+        plugins: initialData.plugins || [],
       });
       setHasGenerated(!isNewNode);
       setIntention("");
-      setAdditionalInputs([]);
-      setNewInputName("");
     }
   }, [isOpen, initialData, isNewNode]);
 
-  const addInput = () => {
-    if (newInputName.trim()) {
-      setAdditionalInputs([...additionalInputs, newInputName.trim()]);
-      setNewInputName("");
+  const updatePlugin = (targetProperty: string, pluginId: string) => {
+    setFormData((prev) => {
+      const currentPlugins = [...(prev.plugins || [])];
+      const index = currentPlugins.findIndex(
+        (p) => p.targetProperty === targetProperty,
+      );
+
+      if (index > -1) {
+        currentPlugins[index] = {
+          ...currentPlugins[index],
+          pluginId,
+          label: targetProperty,
+        };
+      } else {
+        currentPlugins.push({
+          pluginId,
+          targetProperty,
+          label: targetProperty,
+          config: [],
+        });
+      }
+      return { ...prev, plugins: currentPlugins };
+    });
+  };
+
+  const initiateAiGenerate = () => {
+    if (!intention) return;
+    if (!isDataNode && hasNoInputs) {
+      setShowNoInputWarning(true);
+    } else {
+      handleAiGenerate();
     }
   };
 
-  const removeInput = (index: number) => {
-    setAdditionalInputs(additionalInputs.filter((_, i) => i !== index));
-  };
-
   const handleAiGenerate = async () => {
-    if (!intention) return;
     setIsGenerating(true);
+    setShowNoInputWarning(false);
     try {
-      const requestBody = {
-        intention,
-        contextSchema,
-        nodeType,
-        additionalInputs,
-      };
-
       const response = await fetch("/api/ai/generate-service", {
         method: "POST",
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify({ intention, contextSchema, nodeType }),
       });
-
       const data = await response.json();
 
       setFormData((prev) => ({
@@ -104,79 +150,51 @@ export function NodeEditorDialog({
         definition: data.definition,
         inputSchema: isDataNode ? "{}" : formatJson(data.inputSchema),
         outputSchema: formatJson(data.outputSchema),
-        displaySchema: formatJson(data.displaySchema || "{}"), // NEW: Capture generated display schema
+        plugins: data.plugins || [],
       }));
-
-      setIntention("");
       setHasGenerated(true);
+      setIntention("");
     } catch (error) {
-      console.error("AI Generation failed", error);
+      console.error(error);
     } finally {
       setIsGenerating(false);
     }
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 font-bold">
-            {isDataNode ? (
-              <Database className="size-5 text-orange-500" />
-            ) : (
-              <Sparkles className="size-5 text-purple-500" />
-            )}
-            {isNewNode && !hasGenerated
-              ? isDataNode
-                ? "Define Data Structure"
-                : "Define Agent Intent"
-              : isDataNode
-                ? "Configure Data Node"
-                : "Configure Agent"}
-          </DialogTitle>
-        </DialogHeader>
+    <>
+      <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+        <DialogContent className="sm:max-w-[750px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 font-bold">
+              {isDataNode ? (
+                <Database className="size-5 text-amber-500" />
+              ) : (
+                <Sparkles className="size-5 text-purple-500" />
+              )}
+              {hasGenerated
+                ? isDataNode
+                  ? "Configure Data"
+                  : "Configure Agent"
+                : "Describe Intent"}
+            </DialogTitle>
+          </DialogHeader>
 
-        <div
-          className={`p-4 rounded-xl border space-y-4 mb-2 shadow-inner ${isDataNode ? "bg-orange-50 border-orange-200 dark:bg-orange-950/20" : "bg-purple-50 border-purple-200 dark:bg-purple-950/20"}`}
-        >
-          <Label
-            className={`text-[10px] uppercase font-black tracking-widest ${isDataNode ? "text-orange-600" : "text-purple-600"}`}
-          >
-            AI Magic Fill
-          </Label>
-
-          {!isDataNode && contextSchema && contextSchema !== "{}" && (
-            <div className="text-[10px] text-muted-foreground bg-background/50 px-2 py-1.5 rounded border border-dashed border-purple-200 flex items-center gap-1.5">
-              <div className="size-1.5 rounded-full bg-purple-500 animate-pulse" />
-              <span className="truncate max-w-[400px]">
-                Connected to source output (Inherited Context)
-              </span>
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <Label
-              className={`text-xs font-semibold ${isDataNode ? "text-orange-900 dark:text-orange-100" : "text-purple-900 dark:text-purple-100"}`}
-            >
-              {isDataNode ? "Data Description" : "Agent Goal"}
+          <div className="p-4 rounded-xl border bg-muted/20 space-y-4 mb-2">
+            <Label className="text-[10px] uppercase font-black tracking-widest text-primary">
+              AI Generator
             </Label>
             <div className="flex gap-2">
               <Input
-                placeholder={
-                  isDataNode
-                    ? "e.g. User Profile with ID, Name, and Email"
-                    : "e.g. Evaluate the code against the challenge requirements"
-                }
+                placeholder="What should this step do?"
                 value={intention}
                 onChange={(e) => setIntention(e.target.value)}
-                className="text-xs bg-background"
-                autoFocus={isNewNode && !hasGenerated}
+                className="text-xs"
               />
               <Button
                 size="sm"
-                onClick={handleAiGenerate}
+                onClick={initiateAiGenerate}
                 disabled={isGenerating || !intention}
-                className={`shrink-0 text-white ${isDataNode ? "bg-orange-600 hover:bg-orange-700" : "bg-purple-600 hover:bg-purple-700"}`}
               >
                 {isGenerating ? (
                   <Loader2 className="size-4 animate-spin" />
@@ -187,114 +205,206 @@ export function NodeEditorDialog({
             </div>
           </div>
 
-          {isNewNode && !hasGenerated && (
-            <div className="flex justify-center pt-1">
-              <Button
-                variant="link"
-                size="sm"
-                className="h-auto p-0 text-[10px] text-muted-foreground"
-                onClick={() => setHasGenerated(true)}
-              >
-                <SkipForward className="size-3 mr-1" /> Skip to manual entry
-              </Button>
+          {hasGenerated && (
+            <div className="grid gap-8 py-4">
+              {/* SECTION 1: IDENTITY */}
+              <div className="grid gap-4">
+                <div className="grid gap-1.5">
+                  <Label className="text-xs font-semibold">Agent Name</Label>
+                  <Input
+                    value={formData.label || ""}
+                    onChange={(e) =>
+                      setFormData({ ...formData, label: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label className="text-xs font-semibold">
+                    Objective / Definition
+                  </Label>
+                  <Textarea
+                    className="text-xs min-h-[80px]"
+                    value={formData.definition || ""}
+                    onChange={(e) =>
+                      setFormData({ ...formData, definition: e.target.value })
+                    }
+                  />
+                </div>
+              </div>
+
+              {/* SECTION 2: DATA STRUCTURES */}
+              <div className="grid gap-6">
+                {!isDataNode && (
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs font-semibold text-orange-600 uppercase tracking-tight">
+                      Required Inputs
+                    </Label>
+                    <SchemaBuilder
+                      schemaString={formData.inputSchema || "{}"}
+                      onChange={(newSchema) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          inputSchema: newSchema,
+                        }))
+                      }
+                    />
+                  </div>
+                )}
+                <div className="grid gap-1.5">
+                  <Label className="text-xs font-semibold text-primary uppercase tracking-tight">
+                    Logical Output
+                  </Label>
+                  <SchemaBuilder
+                    schemaString={formData.outputSchema || "{}"}
+                    onChange={(newSchema) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        outputSchema: newSchema,
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+
+              {/* SECTION 3: WIDGET MAPPING */}
+              {!isDataNode && (
+                <div className="grid gap-3 pt-4 border-t">
+                  <div className="flex items-center gap-2">
+                    <Settings2 className="size-4 text-purple-600" />
+                    <Label className="text-xs font-bold text-purple-600 uppercase tracking-wider">
+                      Interactive Widget Mapping
+                    </Label>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mb-2">
+                    Choose how the user interacts with each piece of data.
+                  </p>
+
+                  <div className="rounded-lg border bg-muted/5 divide-y shadow-sm">
+                    {allPropertyKeys.length === 0 ? (
+                      <div className="p-8 text-center text-[11px] text-muted-foreground italic">
+                        No properties found. Add fields to schemas above to
+                        configure widgets.
+                      </div>
+                    ) : (
+                      allPropertyKeys.map((key) => {
+                        const plugin = formData.plugins?.find(
+                          (p) => p.targetProperty === key,
+                        );
+                        const currentWidget =
+                          plugin?.pluginId || "standard-input";
+                        const isInput = (formData.inputSchema || "").includes(
+                          `"${key}"`,
+                        );
+
+                        return (
+                          <div
+                            key={key}
+                            className="flex items-center justify-between p-3 transition-colors hover:bg-muted/10"
+                          >
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[11px] font-mono font-bold text-foreground bg-muted px-1.5 py-0.5 rounded border">
+                                  {key}
+                                </span>
+                                <span
+                                  className={cn(
+                                    "text-[8px] font-black uppercase px-1 rounded-sm border",
+                                    isInput
+                                      ? "bg-orange-50 border-orange-200 text-orange-600"
+                                      : "bg-primary/5 border-primary/20 text-primary",
+                                  )}
+                                >
+                                  {isInput ? "Input" : "Output"}
+                                </span>
+                              </div>
+                            </div>
+
+                            <Select
+                              value={currentWidget}
+                              onValueChange={(val) => updatePlugin(key, val)}
+                            >
+                              <SelectTrigger className="w-[200px] h-9 text-[11px] font-medium bg-background">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {WIDGET_OPTIONS.map((opt) => (
+                                  <SelectItem
+                                    key={opt.id}
+                                    value={opt.id}
+                                    className="text-[11px]"
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <opt.icon className="size-3.5 opacity-70" />
+                                      {opt.label}
+                                    </div>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
-        </div>
 
-        {(!isNewNode || hasGenerated) && (
-          <div className="grid gap-4 py-2 animate-in fade-in slide-in-from-top-2 duration-300">
-            <div className="grid gap-1.5">
-              <Label htmlFor="name" className="text-xs font-semibold">
-                {isDataNode ? "Data Label" : "Agent Name"}
-              </Label>
-              <Input
-                id="name"
-                value={formData.label || ""}
-                onChange={(e) =>
-                  setFormData({ ...formData, label: e.target.value })
-                }
-              />
+          <DialogFooter className="mt-6 border-t pt-4">
+            <Button variant="ghost" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => onSave(formData)}
+              disabled={!hasGenerated}
+              className="px-8 font-bold"
+            >
+              Save Configuration
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog
+        open={showNoInputWarning}
+        onOpenChange={setShowNoInputWarning}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <div className="flex items-center gap-2 text-amber-600 mb-2">
+              <AlertTriangle className="size-5" />
+              <AlertDialogTitle>Generate without Inputs?</AlertDialogTitle>
             </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="def" className="text-xs font-semibold">
-                {isDataNode ? "Description" : "System Prompt / Definition"}
-              </Label>
-              <Textarea
-                id="def"
-                className="text-xs min-h-[60px]"
-                value={formData.definition || ""}
-                onChange={(e) =>
-                  setFormData({ ...formData, definition: e.target.value })
-                }
-              />
-            </div>
-
-            {/* Input Schema Builder */}
-            {!isDataNode && (
-              <div className="grid gap-1.5">
-                <Label htmlFor="input" className="text-xs font-semibold">
-                  Input Context (Read-only, derived from edges)
-                </Label>
-                <SchemaBuilder
-                  schemaString={formData.inputSchema || "{}"}
-                  onChange={(newSchema) =>
-                    setFormData((prev) => ({ ...prev, inputSchema: newSchema }))
-                  }
-                  readOnly={true}
-                />
-              </div>
-            )}
-
-            {/* NEW: Display Artifacts Schema Builder */}
-            {!isDataNode && (
-              <div className="grid gap-1.5">
-                <Label
-                  htmlFor="display"
-                  className="text-xs font-semibold text-blue-600 flex items-center gap-1.5"
-                >
-                  <LayoutPanelTop className="size-3" /> Display Artifacts (Local
-                  UI Only)
-                </Label>
-                <SchemaBuilder
-                  schemaString={formData.displaySchema || "{}"}
-                  onChange={(newSchema) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      displaySchema: newSchema,
-                    }))
-                  }
-                />
-              </div>
-            )}
-
-            {/* Output Schema Builder */}
-            <div className="grid gap-1.5">
-              <Label htmlFor="output" className="text-xs font-semibold">
-                {isDataNode
-                  ? "Data Schema"
-                  : "Output Artifacts (Passed Downstream)"}
-              </Label>
-              <SchemaBuilder
-                schemaString={formData.outputSchema || "{}"}
-                onChange={(newSchema) =>
-                  setFormData((prev) => ({ ...prev, outputSchema: newSchema }))
-                }
-              />
-            </div>
-          </div>
-        )}
-        <DialogFooter className="mt-4 border-t pt-4">
-          <Button variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            onClick={() => onSave(formData)}
-            disabled={isNewNode && !hasGenerated}
-          >
-            Save Changes
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+            <AlertDialogDescription className="space-y-3">
+              <p>
+                This agent currently has no incoming connections from other
+                nodes.
+              </p>
+              <p>
+                Without inputs, the AI will assume this is a starting node.
+                Effective agents usually depend on data schemas from previous
+                steps.
+              </p>
+              <p>Are you sure you want to proceed?</p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleAiGenerate}
+              className="bg-amber-600 hover:bg-amber-700"
+            >
+              Continue Generation
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
+}
+
+// Simple local utility for class joining
+function cn(...classes: string[]) {
+  return classes.filter(Boolean).join(" ");
 }

@@ -3,8 +3,12 @@ export type ServiceNodeData = {
   definition: string;
   inputSchema: string;
   outputSchema: string;
-  displaySchema: string;
-  injectedData?: string;
+  plugins?: Array<{
+    pluginId: string;
+    label: string;
+    targetProperty: string;
+    config: Array<{ key: string; value: string }>;
+  }>;
   onEdit?: (id: string) => void;
   onViewSchema?: (title: string, type: string, content: string) => void;
   onPlay?: (id: string) => void;

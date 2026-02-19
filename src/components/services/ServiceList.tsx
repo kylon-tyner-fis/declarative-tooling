@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Trash2, ArrowRight, Cog } from "lucide-react";
+import { Trash2, ArrowRight, Cog, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -11,7 +11,7 @@ import {
   CardFooter,
 } from "@/components/ui/card";
 import { NewServiceDialog } from "./NewServiceDialog";
-import { deleteService } from "@/app/actions"; // Import Server Action
+import { deleteService } from "@/app/actions";
 import { useTransition } from "react";
 import { ServiceEntry } from "@/types/services";
 
@@ -23,7 +23,6 @@ export function ServiceList({ initialServices }: ServiceListProps) {
   const [isPending, startTransition] = useTransition();
 
   const handleDelete = (id: string) => {
-    // Wrap server action in transition to show loading state if needed
     startTransition(async () => {
       await deleteService(id);
     });
@@ -33,11 +32,11 @@ export function ServiceList({ initialServices }: ServiceListProps) {
     <div className="container mx-auto py-10 px-4 max-w-6xl">
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">
             Service Registry
           </h1>
           <p className="text-muted-foreground">
-            Manage architectures for your cloud services.
+            Manage and execute architectures for your cloud services.
           </p>
         </div>
         <NewServiceDialog />
@@ -47,30 +46,48 @@ export function ServiceList({ initialServices }: ServiceListProps) {
         {initialServices.map((service) => (
           <Card
             key={service.id}
-            className="group hover:border-primary/50 transition-all shadow-sm"
+            className="group hover:border-primary/50 transition-all shadow-sm flex flex-col"
           >
-            <CardHeader>
+            <CardHeader className="flex-1">
               <div className="flex items-center justify-between">
-                <CardTitle className="truncate pr-4">{service.name}</CardTitle>
+                <CardTitle className="truncate pr-4 text-lg">
+                  {service.name}
+                </CardTitle>
                 <Cog className="size-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
               </div>
-              <CardDescription className="line-clamp-2 min-h-10">
+              <CardDescription className="line-clamp-2 min-h-10 mt-2 leading-relaxed">
                 {service.description || "No description provided."}
               </CardDescription>
             </CardHeader>
-            <CardFooter className="flex justify-between border-t pt-4 bg-muted/20 rounded-b-xl">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => handleDelete(service.id)}
-                disabled={isPending}
-                className="text-destructive hover:bg-destructive/10 h-8 w-8"
-              >
-                <Trash2 className="size-4" />
-              </Button>
-              <Link href={`/diagram/${service.id}`}>
-                <Button size="sm" className="gap-2">
-                  Open Diagram <ArrowRight className="size-3" />
+
+            <CardFooter className="flex flex-col gap-3 border-t pt-4 bg-muted/20 rounded-b-xl">
+              <div className="flex w-full justify-between items-center">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => handleDelete(service.id)}
+                  disabled={isPending}
+                  className="text-destructive hover:bg-destructive/10 h-8 w-8"
+                >
+                  <Trash2 className="size-4" />
+                </Button>
+                <Link href={`/run/${service.id}`} className="flex-1 px-4">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="w-full gap-2 bg-emerald-600/10 text-emerald-700 hover:bg-emerald-600/20 border border-emerald-600/20 font-bold text-xs uppercase tracking-wider"
+                  >
+                    <Play className="size-3 fill-emerald-700" /> Run Service
+                  </Button>
+                </Link>
+              </div>
+              <Link href={`/diagram/${service.id}`} className="w-full">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full gap-2 text-[10px] font-black uppercase tracking-widest h-8 border-dashed"
+                >
+                  Modify Architecture <ArrowRight className="size-3" />
                 </Button>
               </Link>
             </CardFooter>

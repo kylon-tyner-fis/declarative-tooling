@@ -8,59 +8,54 @@ const openai = new OpenAI({
 });
 
 const ServiceSchema = z.object({
-  label: z
-    .string()
-    .describe("A short, catchy name for the agent or data payload"),
-  definition: z
-    .string()
-    .describe(
-      "A description of what this agent does or what this data contains",
-    ),
+  label: z.string(),
+  definition: z.string(),
   inputSchema: z
     .string()
-    .describe(
-      "A valid JSON schema definition representing the inputs this agent requires.",
-    ),
+    .describe("JSON schema for inputs required from upstream."),
+  // Updated: Logical and Display data merged here
   outputSchema: z
     .string()
     .describe(
-      "JSON schema for data that MUST be passed downstream to subsequent agents.",
+      "JSON schema for all outputs. To mark a property as display-only (not passed downstream), add 'displayOnly': true to its definition.",
     ),
-  displaySchema: z
-    .string()
-    .describe(
-      "JSON schema for artifacts used ONLY for display in the current step (e.g. status reports, narrative text, summaries). Not passed downstream.",
-    ), // NEW
+  plugins: z
+    .array(
+      z.object({
+        pluginId: z.string(),
+        label: z.string(),
+        targetProperty: z.string(),
+        config: z.array(z.object({ key: z.string(), value: z.string() })),
+      }),
+    )
+    .describe("Mapping of schema properties to UI widgets."),
 });
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const { intention, contextSchema, nodeType } = body;
+    const { intention, contextSchema, nodeType } = await req.json();
     const isDataNode = nodeType === "data";
 
     let systemPrompt = "";
     let userPrompt = "";
 
     if (isDataNode) {
-      systemPrompt =
-        "You are an expert Data Architect. Define the structure of a raw data payload based on user intent.";
-      userPrompt = `Define data schema for: "${intention}". \n\n'inputSchema' and 'displaySchema' should be empty objects '{}'.`;
+      systemPrompt = "Expert Data Architect. Define raw payload schemas.";
+      userPrompt = `Define data for: "${intention}". inputSchema/displaySchema must be '{}'. plugins must be [].`;
     } else {
-      systemPrompt = `You are an expert AI workflow architect. 
-      You design agentic services that process data. You distinguish strictly between:
-      1. 'outputSchema': The core structured data required for the next agent in the sequence to function.
-      2. 'displaySchema': Information that is purely for the user's benefit at this specific stage (e.g., an explanation of why a code failed, a summary of a character's backstory, or a visual status update). This data is NOT used as logic input by downstream nodes.`;
+      // Inside the POST handler in src/app/api/ai/generate-service/route.ts
+      systemPrompt = `You are an expert AI workflow architect.
+Every single data property in inputSchema and outputSchema MUST be mapped to a UI widget.
 
-      userPrompt = `Generate a service definition for: "${intention}"`;
+WIDGETS:
+- 'standard-input': Default for basic data.
+- 'code-editor': For code/logic.
+- 'markdown-viewer': For long-form text.
 
-      if (
-        contextSchema &&
-        contextSchema.trim() !== "" &&
-        contextSchema !== "{}"
-      ) {
-        userPrompt += `\n\n### INPUT CONTEXT ###\nThis agent receives these properties from upstream. Incorporate them into your 'inputSchema' configuration as needed:\n${contextSchema}`;
-      }
+STRICT RULE:
+The 'plugins' array MUST contain exactly one entry for every key found in 'inputSchema' and 'outputSchema'. 
+The 'targetProperty' field in the plugin must match the schema key exactly.`;
+      userPrompt = `Generate service: "${intention}". Context: ${contextSchema || "{}"}`;
     }
 
     const completion = await openai.chat.completions.parse({
@@ -72,21 +67,8 @@ export async function POST(req: Request) {
       response_format: zodResponseFormat(ServiceSchema, "service"),
     });
 
-    const result = completion.choices[0].message.parsed;
-
-    if (!result) {
-      return NextResponse.json(
-        { error: "Failed to parse AI response" },
-        { status: 500 },
-      );
-    }
-
-    return NextResponse.json(result);
+    return NextResponse.json(completion.choices[0].message.parsed);
   } catch (error: any) {
-    console.error("AI Generation Error:", error);
-    return NextResponse.json(
-      { error: error.message || "Failed to generate service" },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
