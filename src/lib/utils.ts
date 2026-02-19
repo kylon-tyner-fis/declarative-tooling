@@ -18,20 +18,28 @@ export const formatJson = (jsonString: string) => {
 
 /**
  * Merges multiple JSON schemas into a single object schema.
+ * Supports an optional 'sourceType' tag for properties.
  */
-export const mergeSchemas = (schemas: string[]): string => {
+export const mergeSchemas = (
+  schemas: Array<{ schema: string; type?: "injected" | "standard" }>,
+): string => {
   const mergedProps: Record<string, any> = {};
   const mergedRequired: string[] = [];
 
-  schemas.forEach((s) => {
+  schemas.forEach(({ schema, type }) => {
     try {
-      const parsed = JSON.parse(s || "{}");
-      // Handle both full schemas and raw property objects
+      const parsed = JSON.parse(schema || "{}");
       const props =
         parsed.properties || (parsed.type === "object" ? {} : parsed);
 
       if (typeof props === "object" && props !== null) {
-        Object.assign(mergedProps, props);
+        Object.entries(props).forEach(([key, val]: [string, any]) => {
+          mergedProps[key] = {
+            ...val,
+            // Tag injected fields for the UI
+            _ui_source: type === "injected" ? "injected" : undefined,
+          };
+        });
       }
 
       if (Array.isArray(parsed.required)) {

@@ -19,11 +19,18 @@ const ServiceSchema = z.object({
   inputSchema: z
     .string()
     .describe(
-      "A valid JSON schema definition representing input parameters (Empty object for Data nodes)",
+      "A valid JSON schema definition representing the inputs this agent requires.",
     ),
   outputSchema: z
     .string()
-    .describe("A valid JSON schema definition representing the return data"),
+    .describe(
+      "JSON schema for data that MUST be passed downstream to subsequent agents.",
+    ),
+  displaySchema: z
+    .string()
+    .describe(
+      "JSON schema for artifacts used ONLY for display in the current step (e.g. status reports, narrative text, summaries). Not passed downstream.",
+    ), // NEW
 });
 
 export async function POST(req: Request) {
@@ -32,34 +39,27 @@ export async function POST(req: Request) {
     const { intention, contextSchema, nodeType } = body;
     const isDataNode = nodeType === "data";
 
-    // DEBUG: Log the incoming request data
-    console.log(">>> [DEBUG] AI Generate Request:", { nodeType, intention });
-
     let systemPrompt = "";
     let userPrompt = "";
 
     if (isDataNode) {
       systemPrompt =
-        "You are an expert Data Architect. Your job is to define structured data schemas based on user intent. You ignore input context and focus purely on defining the data payload requested.";
-      userPrompt = `Define a data schema for: "${intention}". \n\nEnsure 'outputSchema' is a valid JSON schema representing this data. 'inputSchema' should be an empty object '{}'.`;
+        "You are an expert Data Architect. Define the structure of a raw data payload based on user intent.";
+      userPrompt = `Define data schema for: "${intention}". \n\n'inputSchema' and 'displaySchema' should be empty objects '{}'.`;
     } else {
-      systemPrompt =
-        "You are an expert AI workflow architect. Define agentic services based on user intent. You design systems where agents pass structured data to each other.";
+      systemPrompt = `You are an expert AI workflow architect. 
+      You design agentic services that process data. You distinguish strictly between:
+      1. 'outputSchema': The core structured data required for the next agent in the sequence to function.
+      2. 'displaySchema': Information that is purely for the user's benefit at this specific stage (e.g., an explanation of why a code failed, a summary of a character's backstory, or a visual status update). This data is NOT used as logic input by downstream nodes.`;
+
       userPrompt = `Generate a service definition for: "${intention}"`;
 
-      if (contextSchema && contextSchema.trim() !== "") {
-        userPrompt += `
-### CRITICAL INPUT CONTEXT ###
-This agent is receiving data from previous nodes. 
-
-YOUR TASK:
-1. Parse the provided context below.
-2. The 'inputSchema' you return MUST be a merge of ALL properties found in the context.
-3. Do not omit any existing fields like "code" or "challengeDescription".
-4. If the user's intention requires NEW inputs (auxiliary config), add them as additional properties.
-
-PREVIOUS NODE OUTPUTS (CONTEXT):
-${contextSchema}`;
+      if (
+        contextSchema &&
+        contextSchema.trim() !== "" &&
+        contextSchema !== "{}"
+      ) {
+        userPrompt += `\n\n### INPUT CONTEXT ###\nThis agent receives these properties from upstream. Incorporate them into your 'inputSchema' configuration as needed:\n${contextSchema}`;
       }
     }
 
@@ -74,27 +74,16 @@ ${contextSchema}`;
 
     const result = completion.choices[0].message.parsed;
 
-    // DEBUG: Log the raw parsed result from OpenAI
-    console.log(
-      ">>> [DEBUG] OpenAI Parsed Result:",
-      JSON.stringify(result, null, 2),
-    );
-
     if (!result) {
-      console.error(
-        ">>> [DEBUG] OpenAI failed to parse response into the expected schema.",
-      );
       return NextResponse.json(
-        { error: "AI failed to produce valid schema data" },
+        { error: "Failed to parse AI response" },
         { status: 500 },
       );
     }
 
     return NextResponse.json(result);
   } catch (error: any) {
-    // DEBUG: Log the full error stack
-    console.error(">>> [DEBUG] OpenAI Route Error:", error);
-
+    console.error("AI Generation Error:", error);
     return NextResponse.json(
       { error: error.message || "Failed to generate service" },
       { status: 500 },

@@ -7,9 +7,9 @@ import { Label } from "@/components/ui/label";
 import {
   Play,
   Loader2,
-  Terminal,
   CheckCircle2,
   Settings,
+  LayoutPanelTop,
   Database,
 } from "lucide-react";
 import { Node } from "@xyflow/react";
@@ -24,42 +24,24 @@ interface PlaygroundDialogProps {
 
 export function PlaygroundDialog({ node, onClose }: PlaygroundDialogProps) {
   const [testInputData, setTestInputData] = useState<any>({});
-  // NEW: State for injected data from upstream Data Nodes
-  const [testInjectedData, setTestInjectedData] = useState<any>({});
-  const [testOutput, setTestOutput] = useState<string | null>(null);
+  const [testOutput, setTestOutput] = useState<any>(null);
   const [isRunningTest, setIsRunningTest] = useState(false);
 
   useEffect(() => {
     if (node) {
-      // Initialize Defined Input Data
       try {
-        const inputSchema = JSON.parse(node.data.inputSchema || "{}");
-        const initialInput: any = {};
-        if (inputSchema.properties) {
-          Object.keys(inputSchema.properties).forEach((key) => {
-            initialInput[key] = "";
+        const schema = JSON.parse(node.data.inputSchema || "{}");
+        const initialData: any = {};
+        if (schema.properties) {
+          Object.keys(schema.properties).forEach((key) => {
+            initialData[key] = "";
           });
         }
-        setTestInputData(initialInput);
+        setTestInputData(initialData);
+        setTestOutput(null);
       } catch (e) {
-        console.error("Error parsing input schema:", e);
+        setTestInputData({});
       }
-
-      // NEW: Initialize Injected Data
-      try {
-        const injectedSchema = JSON.parse(node.data.injectedData || "{}");
-        const initialInjected: any = {};
-        if (injectedSchema.properties) {
-          Object.keys(injectedSchema.properties).forEach((key) => {
-            initialInjected[key] = "";
-          });
-        }
-        setTestInjectedData(initialInjected);
-      } catch (e) {
-        console.error("Error parsing injected schema:", e);
-      }
-
-      setTestOutput(null);
     }
   }, [node]);
 
@@ -69,35 +51,24 @@ export function PlaygroundDialog({ node, onClose }: PlaygroundDialogProps) {
     setTestOutput(null);
 
     try {
-      const outputSchema = JSON.parse(node.data.outputSchema || "{}");
-
-      // NEW: Merge both defined input and injected data for the agent
-      const mergedInput = {
-        ...testInputData,
-        ...testInjectedData,
-      };
-
       const response = await fetch("/api/ai/run-node", {
         method: "POST",
         body: JSON.stringify({
           definition: node.data.definition,
-          inputData: mergedInput,
-          outputSchema,
+          inputData: testInputData,
+          outputSchema: JSON.parse(node.data.outputSchema || "{}"),
+          displaySchema: JSON.parse(node.data.displaySchema || "{}"),
         }),
       });
 
       const result = await response.json();
-      setTestOutput(JSON.stringify(result, null, 2));
+      setTestOutput(result);
     } catch (error) {
-      console.error("Error running agent logic:", error);
-      setTestOutput(JSON.stringify({ error: "Execution failed" }, null, 2));
+      setTestOutput({ error: "Execution failed" });
     } finally {
       setIsRunningTest(false);
     }
   };
-
-  const hasInjectedData =
-    node?.data.injectedData && node.data.injectedData !== "{}";
 
   return (
     <Dialog open={!!node} onOpenChange={(open) => !open && onClose()}>
@@ -115,7 +86,7 @@ export function PlaygroundDialog({ node, onClose }: PlaygroundDialogProps) {
               onClick={handleRunTest}
               disabled={isRunningTest}
               size="sm"
-              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2 shadow-sm"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2"
             >
               {isRunningTest ? (
                 <Loader2 className="size-4 animate-spin" />
@@ -128,65 +99,70 @@ export function PlaygroundDialog({ node, onClose }: PlaygroundDialogProps) {
         </div>
 
         <div className="flex-1 grid grid-cols-2 min-h-0 divide-x divide-border">
+          {/* Left Panel: Simulation Inputs */}
           <div className="flex flex-col h-full min-h-0 bg-muted/10">
-            <div className="px-4 py-2 border-b flex items-center justify-between bg-background shrink-0">
+            <div className="px-4 py-2 border-b bg-background shrink-0">
               <Label className="text-[10px] font-black uppercase text-muted-foreground tracking-wider flex items-center gap-1.5">
-                <Settings className="size-3" /> Input Configuration
+                <Settings className="size-3" /> Simulation Inputs
               </Label>
             </div>
-            <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-6">
-              {/* NEW: Section for Injected Data */}
-              {hasInjectedData && (
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2 text-amber-600">
-                    <Database className="size-3" />
-                    <span className="text-[10px] font-bold uppercase tracking-widest">
-                      Injected Data (Upstream)
-                    </span>
-                  </div>
-                  <div className="p-3 rounded-lg border border-amber-200 bg-amber-50/30">
-                    <DynamicForm
-                      schema={JSON.parse(node?.data.injectedData || "{}")}
-                      data={testInjectedData}
-                      onChange={setTestInjectedData}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Standard Defined Input Section */}
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 text-primary">
-                  <Terminal className="size-3" />
-                  <span className="text-[10px] font-bold uppercase tracking-widest">
-                    Defined Input Properties
-                  </span>
-                </div>
+            <div className="flex-1 min-h-0 overflow-y-auto p-4 bg-background/50">
+              {node && (
                 <DynamicForm
-                  schema={JSON.parse(node?.data.inputSchema || "{}")}
+                  schema={JSON.parse(node.data.inputSchema || "{}")}
                   data={testInputData}
                   onChange={setTestInputData}
                 />
-              </div>
+              )}
             </div>
           </div>
 
+          {/* Right Panel: Categorized Outputs */}
           <div className="flex flex-col h-full min-h-0 bg-background">
-            <div className="px-4 py-2 border-b flex items-center justify-between shrink-0">
+            <div className="px-4 py-2 border-b shrink-0 flex items-center justify-between">
               <Label className="text-[10px] font-black uppercase text-muted-foreground tracking-wider flex items-center gap-1.5">
-                <CheckCircle2 className="size-3" /> Agent Artifacts
+                <CheckCircle2 className="size-3" /> Agent Response
               </Label>
+              {testOutput && (
+                <span className="text-[10px] text-emerald-600 font-medium px-2 py-0.5 bg-emerald-50 rounded-full">
+                  Success
+                </span>
+              )}
             </div>
-            <div className="flex-1 min-h-0 overflow-y-auto p-6">
+            <div className="flex-1 min-h-0 overflow-y-auto">
               {isRunningTest ? (
                 <div className="h-full flex flex-col items-center justify-center gap-3 text-muted-foreground opacity-50">
                   <Loader2 className="size-8 animate-spin text-emerald-600" />
                   <span className="text-xs font-medium uppercase tracking-widest animate-pulse">
-                    Running Agent Logic...
+                    Executing...
                   </span>
                 </div>
               ) : testOutput ? (
-                <OutputDisplay data={JSON.parse(testOutput)} />
+                <div className="divide-y divide-border">
+                  {/* Display Artifacts Section */}
+                  <div className="p-6 space-y-4 bg-blue-50/30">
+                    <div className="flex items-center gap-2 text-blue-700">
+                      <LayoutPanelTop className="size-4" />
+                      <span className="text-xs font-bold uppercase tracking-widest">
+                        Display Artifacts
+                      </span>
+                    </div>
+                    {/* Access ONLY the display key */}
+                    <OutputDisplay data={testOutput.display || {}} />
+                  </div>
+
+                  {/* Data Output Section */}
+                  <div className="p-6 space-y-4">
+                    <div className="flex items-center gap-2 text-emerald-700">
+                      <Database className="size-4" />
+                      <span className="text-xs font-bold uppercase tracking-widest">
+                        Logical Output (Downstream)
+                      </span>
+                    </div>
+                    {/* Access ONLY the output key */}
+                    <OutputDisplay data={testOutput.output || {}} />
+                  </div>
+                </div>
               ) : (
                 <div className="h-full flex flex-col items-center justify-center gap-2 text-muted-foreground/30">
                   <Play className="size-12 fill-muted-foreground/10" />

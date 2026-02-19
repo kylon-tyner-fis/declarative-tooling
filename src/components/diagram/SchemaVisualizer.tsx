@@ -1,19 +1,7 @@
+import { cn } from "@/lib/utils";
+
 interface SchemaVisualizerProps {
   jsonString: string;
-}
-
-interface SchemaProperty {
-  type?: string;
-  description?: string;
-  items?: {
-    type?: string;
-  };
-}
-
-interface FieldDisplay {
-  name: string;
-  type: string;
-  description?: string;
 }
 
 const getTypeColor = (type: string) => {
@@ -34,43 +22,28 @@ const getTypeColor = (type: string) => {
 export default function SchemaVisualizer({
   jsonString,
 }: SchemaVisualizerProps) {
-  if (!jsonString) {
+  // 1. Handle empty input immediately
+  if (!jsonString || jsonString === "{}") {
     return (
       <div className="text-[9px] text-muted-foreground/60 italic px-1 py-2 bg-muted/20 rounded border border-dashed text-center">
-        No schema defined
+        No properties defined
       </div>
     );
   }
 
-  let fields: FieldDisplay[] = [];
+  let properties: Record<string, any> = {};
   let isInvalid = false;
 
+  // 2. Perform data parsing and logic INSIDE the try/catch, but NOT JSX construction
   try {
     const obj = JSON.parse(jsonString);
-    const properties = (obj.properties || obj) as Record<
-      string,
-      SchemaProperty
-    >;
-
-    fields = Object.entries(properties)
-      .slice(0, 4)
-      .map(([key, val]) => {
-        let typeLabel = val.type || typeof val;
-        if (typeLabel === "array") {
-          const itemType = val.items?.type
-            ? val.items.type.substring(0, 3)
-            : "any";
-          typeLabel = `arr[${itemType}]`;
-        } else {
-          typeLabel = typeLabel.substring(0, 3);
-        }
-        return { name: key, type: typeLabel, description: val.description };
-      });
+    properties = (obj.properties || obj) as Record<string, any>;
   } catch (e) {
     console.error("Invalid JSON schema:", e);
     isInvalid = true;
   }
 
+  // 3. Handle error state outside the try/catch
   if (isInvalid) {
     return (
       <div className="text-[8px] text-destructive bg-destructive/10 px-2 py-1 rounded border border-destructive/20 font-medium">
@@ -79,33 +52,50 @@ export default function SchemaVisualizer({
     );
   }
 
+  // 4. Return JSX safely using the processed data
   return (
     <div className="flex flex-col overflow-hidden rounded-lg border border-border/50 bg-muted/30 mt-2 shadow-inner">
-      {fields.map((field, i) => (
-        <div
-          key={field.name}
-          title={field.description || "No description"}
-          className={`flex items-center justify-between gap-3 px-2.5 py-1.5 transition-colors hover:bg-muted/60 cursor-help ${
-            i !== fields.length - 1 ? "border-b border-border/40" : ""
-          }`}
-        >
-          <span className="text-[9px] font-mono font-bold text-foreground/80 truncate max-w-27.5">
-            {field.name}
-          </span>
-          <span
-            className={`text-[7px] font-black uppercase px-1.5 py-0.5 rounded-lg border leading-none shrink-0 tabular-nums tracking-tighter shadow-sm ${getTypeColor(
-              field.type,
-            )}`}
+      {Object.entries(properties).map(([key, val], i) => {
+        const isInjected = val._ui_source === "injected";
+        let typeLabel = val.type || typeof val;
+
+        if (typeLabel === "array") {
+          const itemType = val.items?.type
+            ? val.items.type.substring(0, 3)
+            : "any";
+          typeLabel = `arr[${itemType}]`;
+        } else {
+          typeLabel = typeLabel.substring(0, 3);
+        }
+
+        return (
+          <div
+            key={key}
+            title={val.description || "No description"}
+            className={cn(
+              "flex items-center justify-between gap-3 px-2.5 py-1.5 transition-colors border-b last:border-0 cursor-help",
+              isInjected ? "bg-amber-500/10" : "hover:bg-muted/60",
+            )}
           >
-            {field.type}
-          </span>
-        </div>
-      ))}
-      {fields.length === 0 && (
-        <div className="text-[8px] text-muted-foreground italic p-2 text-center">
-          Empty Object
-        </div>
-      )}
+            <span
+              className={cn(
+                "text-[9px] font-mono font-bold truncate max-w-27.5",
+                isInjected ? "text-amber-700" : "text-foreground/80",
+              )}
+            >
+              {key}
+            </span>
+            <span
+              className={cn(
+                "text-[7px] font-black uppercase px-1.5 py-0.5 rounded-lg border leading-none shrink-0 tabular-nums tracking-tighter shadow-sm",
+                getTypeColor(typeLabel),
+              )}
+            >
+              {typeLabel}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }

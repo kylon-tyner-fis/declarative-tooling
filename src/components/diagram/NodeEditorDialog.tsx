@@ -19,10 +19,11 @@ import {
   Database,
   Plus,
   X,
+  LayoutPanelTop,
 } from "lucide-react";
 import { ServiceNodeData } from "@/types/services";
 import { formatJson } from "@/lib/utils";
-import { SchemaBuilder } from "./SchemaBuilder"; // Import the new component
+import { SchemaBuilder } from "./SchemaBuilder";
 
 interface NodeEditorDialogProps {
   isOpen: boolean;
@@ -44,7 +45,6 @@ export function NodeEditorDialog({
   nodeType = "service",
 }: NodeEditorDialogProps) {
   const [intention, setIntention] = useState("");
-  // New state for additional edge inputs
   const [additionalInputs, setAdditionalInputs] = useState<string[]>([]);
   const [newInputName, setNewInputName] = useState("");
 
@@ -60,6 +60,7 @@ export function NodeEditorDialog({
         ...initialData,
         inputSchema: formatJson(initialData.inputSchema || ""),
         outputSchema: formatJson(initialData.outputSchema || ""),
+        displaySchema: formatJson(initialData.displaySchema || ""), // NEW: Load display schema
       });
       setHasGenerated(!isNewNode);
       setIntention("");
@@ -94,14 +95,18 @@ export function NodeEditorDialog({
         method: "POST",
         body: JSON.stringify(requestBody),
       });
-      const data = await response.json(); // This is finding invalid json
+
+      const data = await response.json();
+
       setFormData((prev) => ({
         ...prev,
         label: data.label,
         definition: data.definition,
         inputSchema: isDataNode ? "{}" : formatJson(data.inputSchema),
         outputSchema: formatJson(data.outputSchema),
+        displaySchema: formatJson(data.displaySchema || "{}"), // NEW: Capture generated display schema
       }));
+
       setIntention("");
       setHasGenerated(true);
     } catch (error) {
@@ -117,7 +122,7 @@ export function NodeEditorDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 font-bold">
             {isDataNode ? (
-              <Database className="size-5 text-amber-500" />
+              <Database className="size-5 text-orange-500" />
             ) : (
               <Sparkles className="size-5 text-purple-500" />
             )}
@@ -132,10 +137,10 @@ export function NodeEditorDialog({
         </DialogHeader>
 
         <div
-          className={`p-4 rounded-xl border space-y-4 mb-2 shadow-inner ${isDataNode ? "bg-amber-50 border-amber-200 dark:bg-amber-950/20" : "bg-purple-50 border-purple-200 dark:bg-purple-950/20"}`}
+          className={`p-4 rounded-xl border space-y-4 mb-2 shadow-inner ${isDataNode ? "bg-orange-50 border-orange-200 dark:bg-orange-950/20" : "bg-purple-50 border-purple-200 dark:bg-purple-950/20"}`}
         >
           <Label
-            className={`text-[10px] uppercase font-black tracking-widest ${isDataNode ? "text-amber-600" : "text-purple-600"}`}
+            className={`text-[10px] uppercase font-black tracking-widest ${isDataNode ? "text-orange-600" : "text-purple-600"}`}
           >
             AI Magic Fill
           </Label>
@@ -144,14 +149,14 @@ export function NodeEditorDialog({
             <div className="text-[10px] text-muted-foreground bg-background/50 px-2 py-1.5 rounded border border-dashed border-purple-200 flex items-center gap-1.5">
               <div className="size-1.5 rounded-full bg-purple-500 animate-pulse" />
               <span className="truncate max-w-[400px]">
-                Connected to source output (Schema inherited)
+                Connected to source output (Inherited Context)
               </span>
             </div>
           )}
 
           <div className="space-y-2">
             <Label
-              className={`text-xs font-semibold ${isDataNode ? "text-amber-900 dark:text-amber-100" : "text-purple-900 dark:text-purple-100"}`}
+              className={`text-xs font-semibold ${isDataNode ? "text-orange-900 dark:text-orange-100" : "text-purple-900 dark:text-purple-100"}`}
             >
               {isDataNode ? "Data Description" : "Agent Goal"}
             </Label>
@@ -171,7 +176,7 @@ export function NodeEditorDialog({
                 size="sm"
                 onClick={handleAiGenerate}
                 disabled={isGenerating || !intention}
-                className={`shrink-0 text-white ${isDataNode ? "bg-amber-600 hover:bg-amber-700" : "bg-purple-600 hover:bg-purple-700"}`}
+                className={`shrink-0 text-white ${isDataNode ? "bg-orange-600 hover:bg-orange-700" : "bg-purple-600 hover:bg-purple-700"}`}
               >
                 {isGenerating ? (
                   <Loader2 className="size-4 animate-spin" />
@@ -224,24 +229,50 @@ export function NodeEditorDialog({
               />
             </div>
 
-            {/* Input Schema - Using SchemaBuilder */}
+            {/* Input Schema Builder */}
             {!isDataNode && (
               <div className="grid gap-1.5">
                 <Label htmlFor="input" className="text-xs font-semibold">
-                  Input Context
+                  Input Context (Read-only, derived from edges)
                 </Label>
                 <SchemaBuilder
                   schemaString={formData.inputSchema || "{}"}
                   onChange={(newSchema) =>
                     setFormData((prev) => ({ ...prev, inputSchema: newSchema }))
                   }
+                  readOnly={true}
                 />
               </div>
             )}
 
+            {/* NEW: Display Artifacts Schema Builder */}
+            {!isDataNode && (
+              <div className="grid gap-1.5">
+                <Label
+                  htmlFor="display"
+                  className="text-xs font-semibold text-blue-600 flex items-center gap-1.5"
+                >
+                  <LayoutPanelTop className="size-3" /> Display Artifacts (Local
+                  UI Only)
+                </Label>
+                <SchemaBuilder
+                  schemaString={formData.displaySchema || "{}"}
+                  onChange={(newSchema) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      displaySchema: newSchema,
+                    }))
+                  }
+                />
+              </div>
+            )}
+
+            {/* Output Schema Builder */}
             <div className="grid gap-1.5">
               <Label htmlFor="output" className="text-xs font-semibold">
-                {isDataNode ? "Data Schema" : "Output Artifacts"}
+                {isDataNode
+                  ? "Data Schema"
+                  : "Output Artifacts (Passed Downstream)"}
               </Label>
               <SchemaBuilder
                 schemaString={formData.outputSchema || "{}"}
